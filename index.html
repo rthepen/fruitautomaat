@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workout Slot Machine - High-Energy Fitness Generator</title>
+  <meta name="description" content="Een interactieve, arcade-achtige workout-fruitautomaat voor energieke groepslessen in de gym. Genereer willekeurige oefeningen en timers met lokale instructievideo's.">
+  
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header>
+      <h1 class="logo" id="main-title">Workout <span>Slots</span></h1>
+      
+      <div class="header-controls">
+        <!-- Sound FX toggle button -->
+        <button id="audio-toggle-btn" class="btn btn-cyan btn-icon" aria-label="Toggle geluidseffecten" title="Geluidseffecten aan/uit">
+          <span class="btn-icon-symbol">🔊</span>
+        </button>
+        <!-- Admin Settings button -->
+        <button id="admin-open-btn" class="btn btn-cyan" aria-label="Open instellingen" title="Instellingen openen">
+          ⚙️ <span style="margin-left: 5px;">INSTELLINGEN</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main View Area -->
+    <main style="flex: 1; position: relative;">
+      
+      <!-- VIEW 1: Idle & Spinning Slot Machine Cabinet -->
+      <section id="idle-view" class="view active" aria-labelledby="slot-heading">
+        <h2 id="slot-heading" class="sr-only" style="display: none;">Fruitautomaat</h2>
+        
+        <div class="slot-machine-cabinet border-pulse-pink">
+          <div class="reels-wrapper">
+            
+            <!-- Reel 1: Material -->
+            <div class="reel-viewport" id="reel-viewport-material">
+              <div class="reel-selection-frame"></div>
+              <div class="reel-strip" id="reel-material">
+                <!-- Dynamically populated -->
+                <div class="reel-card">---</div>
+              </div>
+            </div>
+
+            <!-- Reel 2: Exercise -->
+            <div class="reel-viewport" id="reel-viewport-exercise">
+              <div class="reel-selection-frame"></div>
+              <div class="reel-strip" id="reel-exercise">
+                <!-- Dynamically populated -->
+                <div class="reel-card">---</div>
+              </div>
+            </div>
+
+            <!-- Reel 3: Time -->
+            <div class="reel-viewport" id="reel-viewport-time">
+              <div class="reel-selection-frame"></div>
+              <div class="reel-strip" id="reel-time">
+                <!-- Dynamically populated -->
+                <div class="reel-card">---</div>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="slot-controls">
+            <!-- Giant Spin button -->
+            <button id="spin-btn" class="spin-button">SPIN</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2: Get Ready Countdown Phase -->
+      <section id="countdown-view" class="view" aria-labelledby="countdown-heading">
+        <h2 id="countdown-heading" class="sr-only" style="display: none;">Aftellen</h2>
+        <div class="countdown-wrapper">
+          <div class="countdown-label text-pulse-cyan">Maak je klaar voor:</div>
+          <div id="countdown-exercise-name" class="countdown-exercise-name">Dead Ball Jump Slams</div>
+          <div id="countdown-material-info" class="countdown-material-info">Deadball</div>
+          <div id="countdown-number" class="countdown-number">5</div>
+          <div id="countdown-instruction-card" class="countdown-instruction-card">
+            <div class="countdown-instruction-title">Instructie</div>
+            <p id="countdown-instruction-text" class="countdown-instruction-text">Spring explosief in de lucht...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 3: Active Workout HUD & Video Playback -->
+      <section id="active-view" class="view" aria-labelledby="hud-exercise-name">
+        <div class="workout-hud">
+          <!-- Exercise Header -->
+          <div class="workout-header">
+            <h2 id="hud-exercise-name" class="hud-exercise-name">Dead Ball Jump Slams</h2>
+            <div id="hud-material-info" class="hud-material-info">Deadball</div>
+          </div>
+
+          <!-- Body split: Clock left, Video/Info right -->
+          <div class="workout-body">
+            
+            <!-- Left Side: Circular Timer -->
+            <div class="timer-panel">
+              <div class="timer-circle-container">
+                <svg class="timer-svg" viewBox="0 0 480 480">
+                  <!-- Background ring -->
+                  <circle class="timer-track" cx="240" cy="240" r="220"></circle>
+                  <!-- Foreground running progress ring -->
+                  <circle id="timer-progress-circle" class="timer-progress" cx="240" cy="240" r="220"></circle>
+                </svg>
+                <!-- Digital numeric clock digits -->
+                <div id="timer-digits" class="timer-digits">40</div>
+              </div>
+            </div>
+
+            <!-- Right Side: Video frame & Instructions -->
+            <div class="media-panel">
+              <!-- Video Frame container (PiP layout) -->
+              <div class="video-frame" id="video-frame">
+                <!-- Video player (plays local mp4 without controls, loops, playsinline) -->
+                <video id="workout-video" loop muted playsinline></video>
+                <!-- Fallback thumbnail image -->
+                <img id="video-fallback-img" class="video-fallback-img" src="" alt="Workout oefening visualisatie">
+                
+                <!-- Floating media button overlays -->
+                <div class="video-overlay-controls">
+                  <button id="video-sound-toggle" class="video-btn" aria-label="Video geluid aan/uit" title="Geluid video dempen/inschakelen">🔇</button>
+                </div>
+              </div>
+
+              <!-- Instruction textual description -->
+              <div class="instruction-card">
+                <div class="instruction-title">Instructie</div>
+                <p id="instruction-text" class="instruction-text">
+                  Spring explosief in de lucht en gooi de bal hard op de grond.
+                </p>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Bottom Trainer Controls -->
+          <nav class="trainer-bar" aria-label="Trainer bediening">
+            <button id="btn-pause" class="btn btn-cyan">
+              ⏸ <span style="margin-left: 5px;">PAUZE</span>
+            </button>
+            <button id="btn-skip" class="btn btn-cyan">
+              ⏭ <span style="margin-left: 5px;">OEFENING AFRONDEN</span>
+            </button>
+            <button id="btn-reset" class="btn btn-pink">
+              🔄 <span style="margin-left: 5px;">STOP / RESET</span>
+            </button>
+          </nav>
+        </div>
+      </section>
+
+      <!-- VIEW 4: Workout Finished Celebration -->
+      <section id="finished-view" class="view" aria-labelledby="finished-heading">
+        <div class="finished-panel">
+          <h2 id="finished-heading" class="finished-title text-pulse-cyan">LEKKER BEZIG!</h2>
+          <p id="finished-exercise-text" class="finished-exercise">
+            Oefening is afgerond.
+          </p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Background scrim for admin overlay -->
+    <div id="scrim" class="scrim"></div>
+
+    <!-- Admin Settings Slide-out drawer -->
+    <aside id="admin-overlay" class="admin-overlay" aria-labelledby="admin-title">
+      <div class="admin-header">
+        <h2 id="admin-title">Workout Config</h2>
+        <button id="admin-close-btn" class="admin-close" aria-label="Sluit instellingen">✕</button>
+      </div>
+
+      <div class="admin-content">
+        <!-- Section 1: Timer Limits -->
+        <section class="admin-section">
+          <h3>Timer instellingen (sec)</h3>
+          <div class="time-inputs">
+            <div class="input-group">
+              <label for="min-time-input">Minimale Tijd</label>
+              <input type="number" id="min-time-input" min="10" step="10" value="20">
+            </div>
+            <div class="input-group">
+              <label for="max-time-input">Maximale Tijd</label>
+              <input type="number" id="max-time-input" min="10" step="10" value="60">
+            </div>
+            <div class="input-group">
+              <label for="countdown-time-input">Afteltijd</label>
+              <input type="number" id="countdown-time-input" min="1" max="30" value="5">
+            </div>
+          </div>
+          <p style="font-size: 0.8rem; color: #8888aa; margin-top: 0.2rem;">
+            * Werktijd wordt willekeurig geselecteerd en afgerond op tientallen seconden.
+          </p>
+        </section>
+
+        <!-- Section 2: Material & Exercise Tree Checklist -->
+        <section class="admin-section" style="flex: 1; display: flex; flex-direction: column;">
+          <h3>Materialen & Oefeningen</h3>
+          
+          <div class="selector-list-header">
+            <button id="select-all-btn" class="btn-small">Alles selecteren</button>
+            <button id="deselect-all-btn" class="btn-small">Alles de-selecteren</button>
+          </div>
+
+          <input type="text" id="search-bar" class="search-bar" placeholder="Zoek op materiaal of oefening...">
+
+          <div id="database-tree" class="database-tree">
+            <!-- Populated dynamically via JS -->
+            <p style="padding: 1rem; color: #888;">Database wordt geladen...</p>
+          </div>
+        </section>
+      </div>
+
+      <div class="admin-footer">
+        <button id="admin-save-btn" class="btn btn-cyan" style="width: 100%; justify-content: center;">
+          OPSLAAN & SLUITEN
+        </button>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- Application Modules -->
+  <script src="audio.js"></script>
+  <script src="timer.js"></script>
+  <script src="slotmachine.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
