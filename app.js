@@ -25,6 +25,7 @@ class WorkoutApp {
     this.countdownTime = 10; // Get ready countdown time (customizable)
     this.classEndTime = ''; // 'HH:MM' string
     this.volume = 2.0;     // 0–3.0 (200% default)
+    this.autoPlay = false;  // Auto-spin until class ends
     
     // Active selection
     this.activeMaterial = null;
@@ -108,6 +109,8 @@ class WorkoutApp {
       countdownTimeInput: document.getElementById('countdown-time-input'),
       classEndInput: document.getElementById('class-end-input'),
       volumeInput: document.getElementById('volume-input'),
+      autoplayInput: document.getElementById('autoplay-input'),
+      autoplayStopBtn: document.getElementById('autoplay-stop-btn'),
       databaseTree: document.getElementById('database-tree'),
       searchBar: document.getElementById('search-bar'),
       selectAllBtn: document.getElementById('select-all-btn'),
@@ -166,11 +169,17 @@ class WorkoutApp {
     
     // Save Admin Config
     this.elements.adminSaveBtn.addEventListener('click', () => {
-      // Commit temporary state to active state
       this.disabledExerciseIds = new Set(this.tempDisabledExerciseIds);
       this.saveSettings();
       this.updateReelsPool();
       this.openAdmin(false);
+    });
+
+    // Auto-play stop button
+    this.elements.autoplayStopBtn.addEventListener('click', () => {
+      this.autoPlay = false;
+      this._setCookie('workout_autoplay', false);
+      this.updateAutoPlayUI();
     });
 
     // Sound effects toggle
@@ -236,12 +245,14 @@ class WorkoutApp {
     this.countdownTime = parseInt(this._getCookie('workout_countdown_time')) || 10;
     this.classEndTime = this._getCookie('workout_class_end') || '';
     this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
+    this.autoPlay = this._getCookie('workout_autoplay') === 'true';
     
     this.elements.minTimeInput.value = this.minTime;
     this.elements.maxTimeInput.value = this.maxTime;
     this.elements.countdownTimeInput.value = this.countdownTime;
     this.elements.classEndInput.value = this.classEndTime;
     this.elements.volumeInput.value = Math.round(this.volume * 100);
+    this.elements.autoplayInput.checked = this.autoPlay;
 
     // Disabled exercises
     const savedDisabled = this._getCookie('workout_disabled_exercises');
@@ -259,6 +270,8 @@ class WorkoutApp {
     this.updateAudioButtonUI();
     // Start the live header clock
     this.startClassClock();
+    // Update auto-play button visibility
+    this.updateAutoPlayUI();
   }
 
   saveSettings() {
@@ -267,6 +280,7 @@ class WorkoutApp {
     let countdown = parseInt(this.elements.countdownTimeInput.value) || 10;
     let classEnd = this.elements.classEndInput.value || '';
     let vol = parseInt(this.elements.volumeInput.value) || 200;
+    let autoPlay = this.elements.autoplayInput.checked;
 
     if (min < 10) min = 10;
     if (max < min) max = min;
@@ -280,12 +294,14 @@ class WorkoutApp {
     this.countdownTime = countdown;
     this.classEndTime = classEnd;
     this.volume = vol / 100;
+    this.autoPlay = autoPlay;
 
     this._setCookie('workout_min_time', this.minTime);
     this._setCookie('workout_max_time', this.maxTime);
     this._setCookie('workout_countdown_time', this.countdownTime);
     this._setCookie('workout_class_end', this.classEndTime);
     this._setCookie('workout_volume', this.volume);
+    this._setCookie('workout_autoplay', this.autoPlay);
 
     // Apply volume to audio engine
     if (window.audioEngine) {
@@ -297,6 +313,34 @@ class WorkoutApp {
 
     // Update clock with new end time
     this.startClassClock();
+    // Update auto-play UI
+    this.updateAutoPlayUI();
+  }
+
+  /**
+   * Update the auto-play stop button visibility
+   */
+  updateAutoPlayUI() {
+    const btn = this.elements.autoplayStopBtn;
+    if (!btn) return;
+    if (this.autoPlay) {
+      btn.style.display = '';
+      btn.innerHTML = '⏹ AUTO AAN';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  /**
+   * Check if class end time has passed or is not set
+   */
+  _classIsOver() {
+    if (!this.classEndTime) return false;
+    const [h, m] = this.classEndTime.split(':').map(Number);
+    const now = new Date();
+    const end = new Date(now);
+    end.setHours(h, m, 0, 0);
+    return now >= end;
   }
 
   /**
@@ -878,12 +922,26 @@ class WorkoutApp {
     this.elements.workoutVideo.pause();
     this.elements.workoutVideo.src = '';
 
-    // Wait 6 seconds showing finished panel, then transition back to idle slot machine
+    // Wait 6 seconds showing finished panel, then transition back (or auto-spin)
     setTimeout(() => {
       if (this.timer.state === 'FINISHED' || this.timer.state === 'IDLE') {
         this.elements.spinBtn.disabled = false;
         this.elements.adminOpenBtn.disabled = false;
-        this.switchView('idle-view');
+        
+        // Auto-play: spin again if enabled and class isn't over yet
+        if (this.autoPlay && !this._classIsOver()) {
+          this.switchView('idle-view');
+          // Brief pause on idle screen before spinning again
+          setTimeout(() => {
+            if (this.autoPlay && !this._classIsOver()) {
+              this.handleSpin();
+            } else {
+              // Class is now over, stay on idle
+            }
+          }, 1200);
+        } else {
+          this.switchView('idle-view');
+        }
       }
     }, 6000);
   }
