@@ -1147,7 +1147,7 @@ header {
   100% { transform: rotate(0deg); }
 }
 
-@media (orientation: portrait) and (max-width: 900px) {
+@media (orientation: portrait) and (max-width: 500px) and (pointer: coarse) {
   .orientation-overlay {
     display: flex;
   }
