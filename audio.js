@@ -15,16 +15,28 @@ class AudioEngine {
         if (!this.ctx) {
           this.ctx = new (window.AudioContext || window.webkitAudioContext)();
         }
-        if (this.ctx && this.ctx.state === 'suspended') {
-          this.ctx.resume();
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
         }
+        
+        // Play a short silent buffer to unlock audio on iOS
+        const buffer = this.ctx.createBuffer(1, 1, 22050);
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.ctx.destination);
+        source.start(0);
+        
+        // Remove listeners once successfully initialized and unlocked
+        window.removeEventListener('click', initCtx, { capture: true });
+        window.removeEventListener('touchstart', initCtx, { capture: true });
+        console.log("Web Audio API successfully unlocked!");
       } catch (e) {
-        console.warn("Failed to initialize AudioContext:", e);
+        console.warn("Failed to initialize or unlock AudioContext:", e);
       }
     };
 
-    window.addEventListener('click', initCtx, { once: false, capture: true });
-    window.addEventListener('touchstart', initCtx, { once: false, capture: true });
+    window.addEventListener('click', initCtx, { capture: true });
+    window.addEventListener('touchstart', initCtx, { capture: true });
   }
 
   /**

@@ -499,17 +499,18 @@ header {
 
 .workout-hud {
   width: 98%;
-  height: 90%;
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 2rem;
+  height: 95%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   max-width: 1800px;
+  gap: 1.5vh;
 }
 
 .workout-header {
   text-align: center;
   border-bottom: 2px solid rgba(255, 255, 255, 0.05);
-  padding-bottom: 1.5rem;
+  padding-bottom: 1rem;
 }
 
 .hud-exercise-name {
@@ -532,6 +533,8 @@ header {
 }
 
 .workout-body {
+  flex: 1;
+  min-height: 0; /* allows grid to shrink to fit viewport height */
   display: grid;
   grid-template-columns: 1fr 1.2fr;
   gap: 3rem;
@@ -1097,58 +1100,26 @@ header {
   .card-time {
     font-size: 2.2rem;
   }
-}
-
-/* Force Landscape Orientation Overlay */
-.orientation-overlay {
-  display: none;
-  position: fixed;
-  top: 0; left: 0; width: 100vw; height: 100vh;
-  background-color: #0b0b0f;
-  z-index: 10000;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 2rem;
-  color: #ffffff;
-}
-
-.phone-icon-wrapper {
-  color: var(--neon-cyan);
-  filter: drop-shadow(var(--shadow-cyan));
-  animation: rotatePhone 2.5s ease-in-out infinite;
-  margin-bottom: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.orientation-title {
-  font-family: var(--font-display);
-  font-size: 2.2rem;
-  text-transform: uppercase;
-  color: var(--neon-pink);
-  text-shadow: var(--shadow-pink);
-  margin-bottom: 1rem;
-}
-
-.orientation-text {
-  font-size: 1.1rem;
-  color: #dddde8;
-  max-width: 400px;
-  line-height: 1.5;
-}
-
-@keyframes rotatePhone {
-  0% { transform: rotate(0deg); }
-  30% { transform: rotate(90deg); }
-  70% { transform: rotate(90deg); }
-  100% { transform: rotate(0deg); }
-}
-
-@media (orientation: portrait) and (max-width: 500px) and (pointer: coarse) {
-  .orientation-overlay {
-    display: flex;
+  
+  /* Additional vertical space optimization for active HUD */
+  .view {
+    padding: 1rem;
+  }
+  .workout-hud {
+    height: 98%;
+  }
+  .hud-exercise-name {
+    font-size: 4vw;
+  }
+  .hud-material-info {
+    font-size: 1.4rem;
+  }
+  .instruction-card {
+    padding: 1rem;
+  }
+  .trainer-bar {
+    margin-top: 0.5rem;
   }
 }
+
+
