@@ -6,14 +6,22 @@
  */
 class AudioEngine {
   constructor() {
-    this.muted = localStorage.getItem('workout_audio_muted') === 'true';
+    // Read mute state from cookie
+    this.muted = this._getCookie('workout_audio_muted') === 'true';
+    // Read volume from cookie (default 200%)
+    this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
     this.ctx = null;
+    this.masterGain = null;
 
     // Automatic initialization on first user touch/click interaction
     const initCtx = () => {
       try {
         if (!this.ctx) {
           this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          // Master gain node – all sounds route through this
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.value = this.muted ? 0 : this.volume;
+          this.masterGain.connect(this.ctx.destination);
         }
         if (this.ctx.state === 'suspended') {
           this.ctx.resume().catch(() => {});
@@ -23,13 +31,12 @@ class AudioEngine {
         const buffer = this.ctx.createBuffer(1, 1, 22050);
         const source = this.ctx.createBufferSource();
         source.buffer = buffer;
-        source.connect(this.ctx.destination);
+        source.connect(this.masterGain);
         source.start(0);
         
         // Remove listeners once successfully initialized and unlocked
         window.removeEventListener('click', initCtx, { capture: true });
         window.removeEventListener('touchstart', initCtx, { capture: true });
-        console.log("Web Audio API successfully unlocked!");
       } catch (e) {
         console.warn("Failed to initialize or unlock AudioContext:", e);
       }
@@ -37,6 +44,26 @@ class AudioEngine {
 
     window.addEventListener('click', initCtx, { capture: true });
     window.addEventListener('touchstart', initCtx, { capture: true });
+  }
+
+  /** Cookie helpers */
+  _getCookie(name) {
+    const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  _setCookie(name, value) {
+    // 1 year expiry
+    const expires = new Date(Date.now() + 365 * 864e5).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+  }
+
+  /** Set master volume (0–3.0 = 0–300%) */
+  setVolume(fraction) {
+    this.volume = Math.max(0, Math.min(3.0, fraction));
+    this._setCookie('workout_volume', this.volume);
+    if (this.masterGain && !this.muted) {
+      this.masterGain.gain.value = this.volume;
+    }
   }
 
   /**
@@ -53,7 +80,10 @@ class AudioEngine {
    */
   toggleMute() {
     this.muted = !this.muted;
-    localStorage.setItem('workout_audio_muted', this.muted);
+    this._setCookie('workout_audio_muted', this.muted);
+    if (this.masterGain) {
+      this.masterGain.gain.value = this.muted ? 0 : this.volume;
+    }
     return this.muted;
   }
 
@@ -70,7 +100,7 @@ class AudioEngine {
       const gain = this.ctx.createGain();
 
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.masterGain || this.ctx.destination);
 
       // Brief mechanical-sounding triangle wave click
       osc.type = 'triangle';
@@ -100,7 +130,7 @@ class AudioEngine {
       const gain = this.ctx.createGain();
 
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.masterGain || this.ctx.destination);
 
       osc.type = 'sine';
       osc.frequency.setValueAtTime(880, this.ctx.currentTime);
@@ -130,7 +160,7 @@ class AudioEngine {
 
       osc1.connect(gain);
       osc2.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.masterGain || this.ctx.destination);
 
       osc1.type = 'sawtooth';
       osc1.frequency.setValueAtTime(150, this.ctx.currentTime);
@@ -164,7 +194,7 @@ class AudioEngine {
       const gain = this.ctx.createGain();
 
       osc.connect(gain);
-      gain.connect(this.ctx.destination);
+      gain.connect(this.masterGain || this.ctx.destination);
 
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(400, this.ctx.currentTime);

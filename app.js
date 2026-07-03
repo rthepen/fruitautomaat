@@ -20,9 +20,11 @@ class WorkoutApp {
     this.database = {}; // material_name -> Array of exercises
     this.disabledExerciseIds = new Set();
     this.tempDisabledExerciseIds = new Set(); // Temporary set for uncommitted settings changes
-    this.minTime = 20;
-    this.maxTime = 60;
-    this.countdownTime = 5; // Get ready countdown time (customizable)
+    this.minTime = 30;
+    this.maxTime = 120;
+    this.countdownTime = 10; // Get ready countdown time (customizable)
+    this.classEndTime = ''; // 'HH:MM' string
+    this.volume = 2.0;     // 0–3.0 (200% default)
     
     // Active selection
     this.activeMaterial = null;
@@ -38,6 +40,9 @@ class WorkoutApp {
     
     // Elements Cache
     this.elements = {};
+    
+    // Clock ticker interval
+    this._clockInterval = null;
   }
 
   /**
@@ -101,10 +106,17 @@ class WorkoutApp {
       minTimeInput: document.getElementById('min-time-input'),
       maxTimeInput: document.getElementById('max-time-input'),
       countdownTimeInput: document.getElementById('countdown-time-input'),
+      classEndInput: document.getElementById('class-end-input'),
+      volumeInput: document.getElementById('volume-input'),
       databaseTree: document.getElementById('database-tree'),
       searchBar: document.getElementById('search-bar'),
       selectAllBtn: document.getElementById('select-all-btn'),
       deselectAllBtn: document.getElementById('deselect-all-btn'),
+      
+      // Header clock elements
+      headerCurrentTime: document.getElementById('header-current-time'),
+      headerClassEnd: document.getElementById('header-class-end'),
+      headerRemaining: document.getElementById('header-remaining'),
       
       // Active Workout HUD
       hudExerciseName: document.getElementById('hud-exercise-name'),
@@ -205,25 +217,37 @@ class WorkoutApp {
     await Promise.all(fetchPromises);
   }
 
+  /** Cookie helpers */
+  _getCookie(name) {
+    const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  _setCookie(name, value) {
+    const expires = new Date(Date.now() + 365 * 864e5).toUTCString();
+    document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+  }
+
   /**
-   * Settings management (localStorage)
+   * Settings management (cookies)
    */
   loadSettings() {
-    // Range
-    this.minTime = parseInt(localStorage.getItem('workout_min_time')) || 20;
-    this.maxTime = parseInt(localStorage.getItem('workout_max_time')) || 60;
-    this.countdownTime = parseInt(localStorage.getItem('workout_countdown_time')) || 5;
+    this.minTime = parseInt(this._getCookie('workout_min_time')) || 30;
+    this.maxTime = parseInt(this._getCookie('workout_max_time')) || 120;
+    this.countdownTime = parseInt(this._getCookie('workout_countdown_time')) || 10;
+    this.classEndTime = this._getCookie('workout_class_end') || '';
+    this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
     
     this.elements.minTimeInput.value = this.minTime;
     this.elements.maxTimeInput.value = this.maxTime;
     this.elements.countdownTimeInput.value = this.countdownTime;
+    this.elements.classEndInput.value = this.classEndTime;
+    this.elements.volumeInput.value = Math.round(this.volume * 100);
 
-    // Disabled Exercises IDs
-    const savedDisabled = localStorage.getItem('workout_disabled_exercises');
+    // Disabled exercises
+    const savedDisabled = this._getCookie('workout_disabled_exercises');
     if (savedDisabled) {
       try {
-        const arr = JSON.parse(savedDisabled);
-        this.disabledExerciseIds = new Set(arr);
+        this.disabledExerciseIds = new Set(JSON.parse(savedDisabled));
       } catch (e) {
         this.disabledExerciseIds = new Set();
       }
@@ -233,31 +257,97 @@ class WorkoutApp {
 
     // Audio status sync
     this.updateAudioButtonUI();
+    // Start the live header clock
+    this.startClassClock();
   }
 
   saveSettings() {
-    // Validate and save time range
-    let min = parseInt(this.elements.minTimeInput.value) || 20;
-    let max = parseInt(this.elements.maxTimeInput.value) || 60;
-    let countdown = parseInt(this.elements.countdownTimeInput.value) || 5;
+    let min = parseInt(this.elements.minTimeInput.value) || 30;
+    let max = parseInt(this.elements.maxTimeInput.value) || 120;
+    let countdown = parseInt(this.elements.countdownTimeInput.value) || 10;
+    let classEnd = this.elements.classEndInput.value || '';
+    let vol = parseInt(this.elements.volumeInput.value) || 200;
 
-    // Strict boundary checks
     if (min < 10) min = 10;
     if (max < min) max = min;
     if (countdown < 1) countdown = 1;
-    if (countdown > 30) countdown = 30;
+    if (countdown > 60) countdown = 60;
+    if (vol < 0) vol = 0;
+    if (vol > 300) vol = 300;
 
     this.minTime = min;
     this.maxTime = max;
     this.countdownTime = countdown;
-    
-    localStorage.setItem('workout_min_time', this.minTime);
-    localStorage.setItem('workout_max_time', this.maxTime);
-    localStorage.setItem('workout_countdown_time', this.countdownTime);
+    this.classEndTime = classEnd;
+    this.volume = vol / 100;
+
+    this._setCookie('workout_min_time', this.minTime);
+    this._setCookie('workout_max_time', this.maxTime);
+    this._setCookie('workout_countdown_time', this.countdownTime);
+    this._setCookie('workout_class_end', this.classEndTime);
+    this._setCookie('workout_volume', this.volume);
+
+    // Apply volume to audio engine
+    if (window.audioEngine) {
+      window.audioEngine.setVolume(this.volume);
+    }
 
     // Save disabled exercises
-    const arr = Array.from(this.disabledExerciseIds);
-    localStorage.setItem('workout_disabled_exercises', JSON.stringify(arr));
+    this._setCookie('workout_disabled_exercises', JSON.stringify(Array.from(this.disabledExerciseIds)));
+
+    // Update clock with new end time
+    this.startClassClock();
+  }
+
+  /**
+   * Starts the live header clock and class-end countdown ticker
+   */
+  startClassClock() {
+    if (this._clockInterval) clearInterval(this._clockInterval);
+    const tick = () => {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      if (this.elements.headerCurrentTime) {
+        this.elements.headerCurrentTime.textContent = `${hh}:${mm}:${ss}`;
+      }
+      
+      if (this.classEndTime && this.elements.headerClassEnd) {
+        const [endH, endM] = this.classEndTime.split(':').map(Number);
+        this.elements.headerClassEnd.textContent = `LES EINDIGT: ${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`;
+        this.elements.headerClassEnd.style.display = '';
+        
+        const endDate = new Date(now);
+        endDate.setHours(endH, endM, 0, 0);
+        let diffMs = endDate - now;
+        
+        if (this.elements.headerRemaining) {
+          if (diffMs <= 0) {
+            this.elements.headerRemaining.textContent = 'LES VOORBIJ';
+            this.elements.headerRemaining.className = 'header-clock-remaining ended';
+          } else {
+            const totalSec = Math.floor(diffMs / 1000);
+            const rh = Math.floor(totalSec / 3600);
+            const rm = Math.floor((totalSec % 3600) / 60);
+            const rs = totalSec % 60;
+            const parts = [];
+            if (rh > 0) parts.push(`${rh}u`);
+            parts.push(`${String(rm).padStart(2,'0')}m`);
+            parts.push(`${String(rs).padStart(2,'0')}s`);
+            this.elements.headerRemaining.textContent = parts.join(' ');
+            this.elements.headerRemaining.className = totalSec < 300
+              ? 'header-clock-remaining urgent'
+              : 'header-clock-remaining';
+          }
+        }
+      } else {
+        if (this.elements.headerClassEnd) this.elements.headerClassEnd.style.display = 'none';
+        if (this.elements.headerRemaining) this.elements.headerRemaining.textContent = '';
+      }
+    };
+    tick();
+    this._clockInterval = setInterval(tick, 1000);
   }
 
   /**

@@ -15,6 +15,13 @@
     <!-- Header -->
     <header>
       <h1 class="logo" id="main-title">Workout <span>Slots</span></h1>
+
+      <!-- Live clock + class end countdown -->
+      <div class="header-clock">
+        <div class="header-clock-time" id="header-current-time">--:--</div>
+        <div class="header-clock-end" id="header-class-end">LES EINDIGT: --:--</div>
+        <div class="header-clock-remaining" id="header-remaining"></div>
+      </div>
       
       <div class="header-controls">
         <!-- Sound FX toggle button -->
@@ -179,21 +186,20 @@
       </div>
 
       <div class="admin-content">
-        <!-- Section 1: Timer Limits -->
         <section class="admin-section">
           <h3>Timer instellingen (sec)</h3>
           <div class="time-inputs">
             <div class="input-group">
-              <label for="min-time-input">Minimale Tijd</label>
-              <input type="number" id="min-time-input" min="10" step="10" value="20">
+              <label for="min-time-input">Min. werktijd</label>
+              <input type="number" id="min-time-input" min="10" step="10" value="30">
             </div>
             <div class="input-group">
-              <label for="max-time-input">Maximale Tijd</label>
-              <input type="number" id="max-time-input" min="10" step="10" value="60">
+              <label for="max-time-input">Max. werktijd</label>
+              <input type="number" id="max-time-input" min="10" step="10" value="120">
             </div>
             <div class="input-group">
-              <label for="countdown-time-input">Afteltijd</label>
-              <input type="number" id="countdown-time-input" min="1" max="30" value="5">
+              <label for="countdown-time-input">Maak je klaar (sec)</label>
+              <input type="number" id="countdown-time-input" min="1" max="60" step="1" value="10">
             </div>
           </div>
           <p style="font-size: 0.8rem; color: #8888aa; margin-top: 0.2rem;">
@@ -201,7 +207,20 @@
           </p>
         </section>
 
-        <!-- Section 2: Material & Exercise Tree Checklist -->
+        <!-- Section: Class end time + volume -->
+        <section class="admin-section">
+          <h3>Les &amp; geluid</h3>
+          <div class="time-inputs">
+            <div class="input-group">
+              <label for="class-end-input">Les eindigt om</label>
+              <input type="time" id="class-end-input" value="">
+            </div>
+            <div class="input-group">
+              <label for="volume-input">Volume (%)</label>
+              <input type="number" id="volume-input" min="0" max="300" step="10" value="200">
+            </div>
+          </div>
+        </section>
         <section class="admin-section" style="flex: 1; display: flex; flex-direction: column;">
           <h3>Materialen & Oefeningen</h3>
           
