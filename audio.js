@@ -1,34 +1,38 @@
 /**
  * Audio Engine for Workout Slot Machine
- * Handles preloading, overlapping playback, and muting of custom MP3 effects.
+ * Synthesizes arcade effects dynamically via Web Audio API.
+ * Prevents main thread stuttering, avoids garbage collection,
+ * and allows background music players (e.g. Spotify) to remain active.
  */
 class AudioEngine {
   constructor() {
     this.muted = localStorage.getItem('workout_audio_muted') === 'true';
-    this.sounds = {
-      countdown: new Audio('sounds/countdown.mp3'),
-      start: new Audio('sounds/start.mp3'),
-      stop: new Audio('sounds/stop.mp3')
+    this.ctx = null;
+
+    // Automatic initialization on first user touch/click interaction
+    const initCtx = () => {
+      try {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      } catch (e) {
+        console.warn("Failed to initialize AudioContext:", e);
+      }
     };
 
-    // Configure and preload sounds
-    this.sounds.countdown.volume = 0.6;
-    this.sounds.start.volume = 0.8;
-    this.sounds.stop.volume = 0.8;
+    window.addEventListener('click', initCtx, { once: false, capture: true });
+    window.addEventListener('touchstart', initCtx, { once: false, capture: true });
+  }
 
-    for (const key in this.sounds) {
-      this.sounds[key].load();
-    }
-
-    // High-performance pool for spin ticks to prevent GC and UI rendering lag
-    this.spinPool = [];
-    this.spinPoolSize = 10;
-    this.spinPoolIndex = 0;
-    for (let i = 0; i < this.spinPoolSize; i++) {
-      const a = new Audio('sounds/spin.mp3');
-      a.volume = 0.25;
-      a.load();
-      this.spinPool.push(a);
+  /**
+   * Resume context helper to guarantee audio is active on interaction
+   */
+  resumeContext() {
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {});
     }
   }
 
@@ -42,56 +46,126 @@ class AudioEngine {
   }
 
   /**
-   * Internal helper to play a preloaded sound, handles overlapping clicks and countdowns.
+   * Synthesize a mechanical click/tick for slot reels rotation
    */
-  playSound(name) {
-    if (this.muted) return;
-    const sound = this.sounds[name];
-    if (sound) {
-      try {
-        // For countdown beeps, clone to support overlap, start/stop are played once
-        if (name === 'countdown') {
-          const clone = sound.cloneNode();
-          clone.volume = sound.volume;
-          clone.play().catch(err => {
-            console.debug(`Autoplay restriction or audio playback error for sound [${name}]:`, err);
-          });
-        } else {
-          sound.currentTime = 0;
-          sound.play().catch(err => {
-            console.debug(`Autoplay restriction or audio playback error for sound [${name}]:`, err);
-          });
-        }
-      } catch (e) {
-        console.error(`Error playing sound [${name}]:`, e);
-      }
-    }
-  }
-
   playSpin() {
     if (this.muted) return;
+    this.resumeContext();
+    if (!this.ctx) return;
+
     try {
-      const audio = this.spinPool[this.spinPoolIndex];
-      audio.currentTime = 0;
-      audio.play().catch(err => {
-        console.debug("Autoplay restriction for spin tick:", err);
-      });
-      this.spinPoolIndex = (this.spinPoolIndex + 1) % this.spinPoolSize;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      // Brief mechanical-sounding triangle wave click
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1000, this.ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(100, this.ctx.currentTime + 0.015);
+
+      gain.gain.setValueAtTime(0.08, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.015);
+
+      osc.start(this.ctx.currentTime);
+      osc.stop(this.ctx.currentTime + 0.02);
     } catch (e) {
-      console.error("Error playing spin tick:", e);
+      console.debug("Web Audio playSpin failed:", e);
     }
   }
 
+  /**
+   * Synthesize a clean countdown beep (880Hz A5 note)
+   */
   playCountdown() {
-    this.playSound('countdown');
+    if (this.muted) return;
+    this.resumeContext();
+    if (!this.ctx) return;
+
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, this.ctx.currentTime);
+
+      gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.15);
+
+      osc.start(this.ctx.currentTime);
+      osc.stop(this.ctx.currentTime + 0.16);
+    } catch (e) {
+      console.debug("Web Audio playCountdown failed:", e);
+    }
   }
 
+  /**
+   * Synthesize a boxing round start buzzer (detuned sawtooth + square)
+   */
   playStart() {
-    this.playSound('start');
+    if (this.muted) return;
+    this.resumeContext();
+    if (!this.ctx) return;
+
+    try {
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc1.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(150, this.ctx.currentTime);
+
+      osc2.type = 'square';
+      osc2.frequency.setValueAtTime(151, this.ctx.currentTime); // slightly detuned for chorus
+
+      gain.gain.setValueAtTime(0.18, this.ctx.currentTime);
+      gain.gain.setValueAtTime(0.18, this.ctx.currentTime + 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.6);
+
+      osc1.start(this.ctx.currentTime);
+      osc2.start(this.ctx.currentTime);
+      osc1.stop(this.ctx.currentTime + 0.6);
+      osc2.stop(this.ctx.currentTime + 0.6);
+    } catch (e) {
+      console.debug("Web Audio playStart failed:", e);
+    }
   }
 
+  /**
+   * Synthesize a descending buzzer alarm for end of workout
+   */
   playStop() {
-    this.playSound('stop');
+    if (this.muted) return;
+    this.resumeContext();
+    if (!this.ctx) return;
+
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(150, this.ctx.currentTime + 0.5);
+
+      gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.55);
+
+      osc.start(this.ctx.currentTime);
+      osc.stop(this.ctx.currentTime + 0.6);
+    } catch (e) {
+      console.debug("Web Audio playStop failed:", e);
+    }
   }
 }
 
