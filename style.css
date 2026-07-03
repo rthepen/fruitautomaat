@@ -41,7 +41,7 @@ body {
   background-color: var(--bg-primary);
   color: #ffffff;
   font-family: var(--font-sans);
-  overflow-x: hidden;
+  overflow: hidden; /* Hide scrollbars completely */
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -68,8 +68,7 @@ body {
   display: flex;
   flex-direction: column;
   position: relative;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden; /* Hide scrollbars completely */
   background: radial-gradient(circle at center, #1b112c 0%, var(--bg-primary) 70%);
 }
 
@@ -551,8 +550,8 @@ header {
 /* Circular progress & digital clock */
 .timer-circle-container {
   position: relative;
-  width: 480px;
-  height: 480px;
+  width: min(480px, 45vh);
+  height: min(480px, 45vh);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -590,7 +589,7 @@ header {
 
 .timer-digits {
   font-family: var(--font-digital);
-  font-size: 9.5rem;
+  font-size: min(9.5rem, 9.5vh);
   font-weight: 700;
   color: #ffffff;
   text-shadow: 0 0 20px rgba(255,255,255,0.2);
@@ -610,6 +609,7 @@ header {
 /* Video Frame (Picture in Picture style) */
 .video-frame {
   width: 100%;
+  max-height: 30vh; /* restrict height so it fits in low-height viewports */
   aspect-ratio: 16/9;
   background-color: #050508;
   border: 4px solid #252535;
@@ -1029,13 +1029,14 @@ header {
    ========================================================================== */
 
 /* Neon pulse frames */
-.border-pulse-pink {
-  animation: pulsePink 2s infinite alternate;
+/* Neon pulse frames (runs entirely on GPU compositor by animating opacity on ::before pseudo-element) */
+.border-pulse-pink::before {
+  animation: pulsePink 2.5s infinite alternate ease-in-out;
 }
 
 @keyframes pulsePink {
-  0% { box-shadow: 0 0 5px rgba(255, 0, 127, 0.3), inset 0 0 5px rgba(255, 0, 127, 0.1); }
-  100% { box-shadow: 0 0 15px rgba(255, 0, 127, 0.6), inset 0 0 10px rgba(255, 0, 127, 0.2); }
+  0% { opacity: 0.35; }
+  100% { opacity: 0.95; }
 }
 
 .text-pulse-cyan {
@@ -1096,11 +1097,58 @@ header {
   .card-time {
     font-size: 2.2rem;
   }
-  .timer-circle-container {
-    width: 380px;
-    height: 380px;
-  }
-  .timer-digits {
-    font-size: 7.5rem;
+}
+
+/* Force Landscape Orientation Overlay */
+.orientation-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; width: 100vw; height: 100vh;
+  background-color: #0b0b0f;
+  z-index: 10000;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  color: #ffffff;
+}
+
+.phone-icon-wrapper {
+  color: var(--neon-cyan);
+  filter: drop-shadow(var(--shadow-cyan));
+  animation: rotatePhone 2.5s ease-in-out infinite;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orientation-title {
+  font-family: var(--font-display);
+  font-size: 2.2rem;
+  text-transform: uppercase;
+  color: var(--neon-pink);
+  text-shadow: var(--shadow-pink);
+  margin-bottom: 1rem;
+}
+
+.orientation-text {
+  font-size: 1.1rem;
+  color: #dddde8;
+  max-width: 400px;
+  line-height: 1.5;
+}
+
+@keyframes rotatePhone {
+  0% { transform: rotate(0deg); }
+  30% { transform: rotate(90deg); }
+  70% { transform: rotate(90deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  .orientation-overlay {
+    display: flex;
   }
 }
