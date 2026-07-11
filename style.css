@@ -234,6 +234,15 @@ header {
 }
 
 /* ── State: IDLE ────────────────────── */
+.state-idle .left-panel {
+  width: 100%;
+  max-width: none;
+  padding: 1.5rem 3rem;
+}
+.state-idle .slot-machine-cabinet {
+  width: 100%;
+  max-width: 1400px;
+}
 .state-idle .slot-machine-panel  { display: flex; }
 .state-idle .unified-timer-panel { display: none; }
 .state-idle .right-panel         { display: none; }
