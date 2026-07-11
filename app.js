@@ -126,10 +126,9 @@ class WorkoutApp {
       hudMaterialInfo: document.getElementById('hud-material-info'),
       timerDigits: document.getElementById('timer-digits'),
       timerProgressCircle: document.getElementById('timer-progress-circle'),
-      workoutVideo: document.getElementById('workout-video'),
+      workoutIframe: document.getElementById('workout-video-iframe'),
       videoFrame: document.getElementById('video-frame'),
       videoFallbackImg: document.getElementById('video-fallback-img'),
-      videoSoundToggle: document.getElementById('video-sound-toggle'),
       instructionText: document.getElementById('instruction-text'),
       
       // Workout Controls (Trainer panel)
@@ -189,15 +188,6 @@ class WorkoutApp {
     this.elements.btnPause.addEventListener('click', () => this.toggleWorkoutPause());
     this.elements.btnSkip.addEventListener('click', () => this.handleWorkoutSkip());
     this.elements.btnReset.addEventListener('click', () => this.handleWorkoutReset());
-
-    // Video sound control
-    this.elements.videoSoundToggle.addEventListener('click', () => this.toggleVideoSound());
-    
-    // Video loading error boundary
-    this.elements.workoutVideo.addEventListener('error', () => {
-      console.warn(`Local video file missing: videos/${this.activeExercise.id}.mp4. Displaying fallback image.`);
-      this.elements.videoFrame.classList.add('use-fallback');
-    });
   }
 
   /**
@@ -792,25 +782,8 @@ class WorkoutApp {
     // Set instructions
     this.elements.instructionText.textContent = this.activeExercise.instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.";
     
-    // Setup video elements
-    const video = this.elements.workoutVideo;
-    this.elements.videoFrame.classList.remove('use-fallback');
-    
-    // Map video_search_url -> local mp4
-    video.src = `videos/${this.activeExercise.id}.mp4`;
-    video.muted = this.videoMuted;
-    video.currentTime = 0;
-    
-    // Set video controls UI icon
-    this.updateVideoSoundButtonUI();
-
-    // Try playing
-    video.play().catch(err => {
-      console.warn("Video autoplay failed, waiting for user click.", err);
-    });
-
-    // Image fallback preview
-    this.elements.videoFallbackImg.src = this.activeExercise.thumbnail || 'https://i.ytimg.com/vi/LcgWDIYgnhg/hqdefault.jpg';
+    // Load YouTube embed
+    this._loadYouTubeIframe();
 
     // Setup circular progress ring
     const circle = this.elements.timerProgressCircle;
@@ -826,6 +799,52 @@ class WorkoutApp {
 
     // Initial digits draw
     this.updateHUDTimer(this.activeTime);
+  }
+
+  /**
+   * Build and set the YouTube embed iframe src for the current exercise
+   */
+  _loadYouTubeIframe() {
+    const iframe = this.elements.workoutIframe;
+    const fallback = this.elements.videoFallbackImg;
+    const frame = this.elements.videoFrame;
+
+    const embedUrl = this.activeExercise.video_search_url || '';
+    
+    if (embedUrl) {
+      // Build embed URL with autoplay, mute, loop, no controls chrome
+      // Extract video ID from embed URL for loop playlist param
+      const videoId = embedUrl.split('/embed/')[1]?.split('?')[0] || '';
+      const params = new URLSearchParams({
+        autoplay: '1',
+        mute: '1',
+        loop: '1',
+        playlist: videoId,   // required for loop to work
+        controls: '0',
+        modestbranding: '1',
+        rel: '0',
+        showinfo: '0',
+        iv_load_policy: '3'
+      });
+      const baseUrl = embedUrl.split('?')[0]; // strip any existing params
+      iframe.src = `${baseUrl}?${params.toString()}`;
+      iframe.style.display = 'block';
+      frame.classList.remove('use-fallback');
+    } else {
+      // No YouTube URL — show thumbnail fallback
+      iframe.src = '';
+      iframe.style.display = 'none';
+      fallback.src = this.activeExercise.thumbnail || '';
+      frame.classList.add('use-fallback');
+    }
+  }
+
+  /**
+   * Stop the YouTube iframe (unload it to stop playback)
+   */
+  _stopYouTubeIframe() {
+    const iframe = this.elements.workoutIframe;
+    if (iframe) iframe.src = '';
   }
 
   /**
@@ -851,19 +870,7 @@ class WorkoutApp {
     }
   }
 
-  /**
-   * Toggle video sound muting
-   */
-  toggleVideoSound() {
-    const video = this.elements.workoutVideo;
-    this.videoMuted = !this.videoMuted;
-    video.muted = this.videoMuted;
-    this.updateVideoSoundButtonUI();
-  }
 
-  updateVideoSoundButtonUI() {
-    this.elements.videoSoundToggle.textContent = this.videoMuted ? '🔇' : '🔊';
-  }
 
   /**
    * Trainer Controls - Pause / Resume
@@ -871,12 +878,14 @@ class WorkoutApp {
   toggleWorkoutPause() {
     if (this.timer.state === 'RUNNING' || this.timer.state === 'COUNTDOWN') {
       this.timer.pause();
-      this.elements.workoutVideo.pause();
+      // Pause YouTube: unload the iframe src so video stops
+      this._stopYouTubeIframe();
       this.elements.btnPause.innerHTML = '▶ <span style="margin-left: 5px;">VERVOLG</span>';
       this.elements.btnPause.className = 'btn btn-pink';
     } else if (this.timer.state === 'PAUSED') {
       this.timer.resume();
-      this.elements.workoutVideo.play().catch(() => {});
+      // Resume: reload the YouTube iframe
+      this._loadYouTubeIframe();
       this.elements.btnPause.innerHTML = '⏸ <span style="margin-left: 5px;">PAUZE</span>';
       this.elements.btnPause.className = 'btn btn-cyan';
     }
@@ -887,11 +896,8 @@ class WorkoutApp {
    */
   handleWorkoutSkip() {
     this.timer.stop();
-    this.elements.workoutVideo.pause();
-    
-    // Play stop sound directly on skip
+    this._stopYouTubeIframe();
     if (window.audioEngine) window.audioEngine.playStop();
-    
     this.handleWorkoutComplete();
   }
 
@@ -900,13 +906,9 @@ class WorkoutApp {
    */
   handleWorkoutReset() {
     this.timer.stop();
-    this.elements.workoutVideo.pause();
-    this.elements.workoutVideo.src = '';
-    
-    // Reset controls
+    this._stopYouTubeIframe();
     this.elements.spinBtn.disabled = false;
     this.elements.adminOpenBtn.disabled = false;
-    
     this.switchView('idle-view');
   }
 
@@ -917,10 +919,8 @@ class WorkoutApp {
     this.switchView('finished-view');
     
     this.elements.finishedExercise.innerHTML = `Lekker bezig! Oefening <span>${this.activeExercise.exercise_name}</span> is afgerond.`;
-    
-    // Stop video
-    this.elements.workoutVideo.pause();
-    this.elements.workoutVideo.src = '';
+    // Stop YouTube video
+    this._stopYouTubeIframe();
 
     // Wait 6 seconds showing finished panel, then transition back (or auto-spin)
     setTimeout(() => {

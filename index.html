@@ -130,15 +130,17 @@
             <div class="media-panel">
               <!-- Video Frame container (PiP layout) -->
               <div class="video-frame" id="video-frame">
-                <!-- Video player (plays local mp4 without controls, loops, playsinline) -->
-                <video id="workout-video" loop muted playsinline></video>
-                <!-- Fallback thumbnail image -->
+                <!-- YouTube embed iframe (autoplay, muted, loop) -->
+                <iframe
+                  id="workout-video-iframe"
+                  src=""
+                  frameborder="0"
+                  allow="autoplay; encrypted-media"
+                  allowfullscreen
+                  style="width:100%;height:100%;border:0;"
+                ></iframe>
+                <!-- Fallback thumbnail image when no YouTube URL -->
                 <img id="video-fallback-img" class="video-fallback-img" src="" alt="Workout oefening visualisatie">
-                
-                <!-- Floating media button overlays -->
-                <div class="video-overlay-controls">
-                  <button id="video-sound-toggle" class="video-btn" aria-label="Video geluid aan/uit" title="Geluid video dempen/inschakelen">🔇</button>
-                </div>
               </div>
 
               <!-- Instruction textual description -->
