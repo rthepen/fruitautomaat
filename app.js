@@ -983,16 +983,22 @@ class WorkoutApp {
     }
   }
 
-  /**
-   * Switch app state via CSS class on #app-main
-   * @param {'idle'|'countdown'|'active'} state
-   */
   switchView(state) {
     const main = this.elements.appMain;
     if (!main) return;
     main.classList.remove('state-idle', 'state-countdown', 'state-active');
     main.classList.add(`state-${state}`);
+
+    if (this.slotMachine) {
+      setTimeout(() => {
+        this.slotMachine.realign();
+        if (state === 'countdown' || state === 'active') {
+          this._positionVideoFrame('#video-slot');
+        }
+      }, 60);
+    }
   }
+
 
   /**
    * Helper loading display

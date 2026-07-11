@@ -311,6 +311,32 @@ class SlotMachine {
   }
 
   /**
+   * Recalculates card heights and snaps active items to the center of the viewport
+   */
+  realign() {
+    this.reels.forEach(reel => {
+      reel.updateItemHeight();
+      if (reel.state === 'IDLE') {
+        let originalIdx = 0;
+        if (reel.targetItem) {
+          if (reel.itemType === 'time') {
+            originalIdx = reel.items.indexOf(reel.targetItem);
+          } else if (reel.itemType === 'material') {
+            originalIdx = reel.items.indexOf(reel.targetItem);
+          } else {
+            originalIdx = reel.items.findIndex(ex => ex.id === reel.targetItem.id);
+          }
+          if (originalIdx === -1) originalIdx = 0;
+        }
+        reel.offset = -(originalIdx * reel.itemHeight) + reel.itemHeight;
+        reel.updateTransform();
+        reel.highlightActiveCard();
+      }
+    });
+  }
+
+
+  /**
    * Populate all three reels with active items
    */
   setupReels(materials, exercises, times) {

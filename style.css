@@ -1499,4 +1499,68 @@ header {
   }
 }
 
+/* ==========================================================================
+   SLOT MACHINE COLLAPSE OVERRIDES DURING WORKOUT
+   ========================================================================== */
+
+.state-countdown .slot-machine-panel,
+.state-active .slot-machine-panel {
+  padding: 0.1rem 2rem !important;
+}
+
+.state-countdown .slot-machine-cabinet,
+.state-active .slot-machine-cabinet {
+  padding: 0.4rem 1rem !important;
+  gap: 0.4rem !important;
+}
+
+.state-countdown .slot-controls,
+.state-active .slot-controls {
+  display: none !important; /* Hide SPIN button during workout */
+}
+
+.state-countdown .reel-viewport,
+.state-active .reel-viewport {
+  height: 90px !important; /* Show exactly the middle active card */
+}
+
+.state-countdown .reel-selection-frame,
+.state-active .reel-selection-frame {
+  top: 0 !important;
+  height: 90px !important;
+  border-width: 2px !important;
+}
+
+.state-countdown .reel-card,
+.state-active .reel-card {
+  height: 90px !important;
+  padding: 0.1rem 0.5rem !important;
+  border-bottom: 0 !important;
+}
+
+/* Adjust active card transforms so it doesn't get cut off */
+.state-countdown .reel-card.active,
+.state-active .reel-card.active {
+  transform: none !important;
+}
+
+/* Adjust card titles and font sizes to be more compact during workout */
+.state-countdown .card-title,
+.state-active .card-title {
+  font-size: clamp(0.9rem, 1.5vw, 1.2rem) !important;
+}
+.state-countdown .exercise-title,
+.state-active .exercise-title {
+  font-size: clamp(0.9rem, 1.5vw, 1.2rem) !important;
+}
+.state-countdown .card-time,
+.state-active .card-time {
+  font-size: clamp(1.4rem, 2.2vw, 1.8rem) !important;
+}
+.state-countdown .card-unit,
+.state-active .card-unit {
+  font-size: 0.7rem !important;
+}
+
+
 
