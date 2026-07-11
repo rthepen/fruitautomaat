@@ -1494,26 +1494,6 @@ header {
     max-width: 1000px;
     gap: 1.2rem;
   }
-  .reel-viewport {
-    height: 300px;
-  }
-  .reel-selection-frame {
-    top: 100px;
-    height: 100px;
-  }
-  .reel-card {
-    height: 100px;
-  }
-  .card-title {
-    font-size: 1.3rem;
-  }
-  .exercise-title {
-    font-size: 1.15rem;
-  }
-  .card-time {
-    font-size: 2.2rem;
-  }
-  
   /* Additional vertical space optimization for active HUD */
   .view {
     padding: 1rem;
