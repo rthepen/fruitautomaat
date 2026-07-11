@@ -110,6 +110,7 @@ class WorkoutApp {
       countdownTimeInput: document.getElementById('countdown-time-input'),
       classEndInput: document.getElementById('class-end-input'),
       volumeInput: document.getElementById('volume-input'),
+      requireVideoInput: document.getElementById('require-video-input'),
       autoplayInput: document.getElementById('autoplay-input'),
       autoplayStopBtn: document.getElementById('autoplay-stop-btn'),
       databaseTree: document.getElementById('database-tree'),
@@ -181,6 +182,13 @@ class WorkoutApp {
       this.updateAutoPlayUI();
     });
 
+    // Video requirement toggle
+    this.elements.requireVideoInput.addEventListener('change', (e) => {
+      this.requireVideo = e.target.checked;
+      this.buildAdminTree();
+      this.filterAdminTree(this.elements.searchBar.value);
+    });
+
     // Sound effects toggle
     this.elements.audioToggleBtn.addEventListener('click', () => this.toggleUIAudio());
 
@@ -243,6 +251,7 @@ class WorkoutApp {
     this.classEndTime = this._getCookie('workout_class_end') || '';
     this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
     this.autoPlay = this._getCookie('workout_autoplay') === 'true';
+    this.requireVideo = this._getCookie('workout_require_video') !== 'false';
     
     this.elements.minTimeInput.value = this.minTime;
     this.elements.maxTimeInput.value = this.maxTime;
@@ -250,6 +259,7 @@ class WorkoutApp {
     this.elements.classEndInput.value = this.classEndTime;
     this.elements.volumeInput.value = Math.round(this.volume * 100);
     this.elements.autoplayInput.checked = this.autoPlay;
+    this.elements.requireVideoInput.checked = this.requireVideo;
 
     // Disabled exercises
     const savedDisabled = this._getCookie('workout_disabled_exercises');
@@ -278,6 +288,7 @@ class WorkoutApp {
     let classEnd = this.elements.classEndInput.value || '';
     let vol = parseInt(this.elements.volumeInput.value) || 200;
     let autoPlay = this.elements.autoplayInput.checked;
+    let requireVideo = this.elements.requireVideoInput.checked;
 
     if (min < 10) min = 10;
     if (max < min) max = min;
@@ -292,6 +303,7 @@ class WorkoutApp {
     this.classEndTime = classEnd;
     this.volume = vol / 100;
     this.autoPlay = autoPlay;
+    this.requireVideo = requireVideo;
 
     this._setCookie('workout_min_time', this.minTime);
     this._setCookie('workout_max_time', this.maxTime);
@@ -299,6 +311,7 @@ class WorkoutApp {
     this._setCookie('workout_class_end', this.classEndTime);
     this._setCookie('workout_volume', this.volume);
     this._setCookie('workout_autoplay', this.autoPlay);
+    this._setCookie('workout_require_video', this.requireVideo);
 
     // Apply volume to audio engine
     if (window.audioEngine) {
@@ -428,7 +441,11 @@ class WorkoutApp {
     const sortedMaterials = Object.keys(this.database).sort();
 
     sortedMaterials.forEach((materialName) => {
-      const exercises = this.database[materialName];
+      let exercises = this.database[materialName];
+      if (this.requireVideo) {
+        exercises = exercises.filter(ex => (ex.video_search_url || '').trim() !== '');
+      }
+      if (exercises.length === 0) return;
       
       const node = document.createElement('div');
       node.className = 'material-node';
@@ -544,7 +561,10 @@ class WorkoutApp {
     const node = this.elements.databaseTree.querySelector(`.material-node[data-material="${CSS.escape(materialName)}"]`);
     if (!node) return;
 
-    const exercises = this.database[materialName];
+    let exercises = this.database[materialName];
+    if (this.requireVideo) {
+      exercises = exercises.filter(ex => (ex.video_search_url || '').trim() !== '');
+    }
     const exercisesIds = exercises.map(ex => ex.id);
     const disabledCount = exercisesIds.filter(id => this.tempDisabledExerciseIds.has(id)).length;
     
@@ -606,7 +626,11 @@ class WorkoutApp {
    */
   toggleAllExercises(shouldEnable) {
     for (const materialName in this.database) {
-      this.database[materialName].forEach(ex => {
+      let exercises = this.database[materialName];
+      if (this.requireVideo) {
+        exercises = exercises.filter(ex => (ex.video_search_url || '').trim() !== '');
+      }
+      exercises.forEach(ex => {
         if (shouldEnable) {
           this.tempDisabledExerciseIds.delete(ex.id);
         } else {
@@ -628,7 +652,11 @@ class WorkoutApp {
     const activeExercises = [];
 
     for (const materialName in this.database) {
-      const enabledExs = this.database[materialName].filter(ex => !this.disabledExerciseIds.has(ex.id));
+      const enabledExs = this.database[materialName].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !(ex.video_search_url || '').trim()) return false;
+        return true;
+      });
       if (enabledExs.length > 0) {
         activeMaterials.push(materialName);
         activeExercises.push(...enabledExs);
@@ -663,7 +691,11 @@ class WorkoutApp {
     const activeExercisesMap = {}; // material -> exercises
 
     for (const materialName in this.database) {
-      const enabledExs = this.database[materialName].filter(ex => !this.disabledExerciseIds.has(ex.id));
+      const enabledExs = this.database[materialName].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !(ex.video_search_url || '').trim()) return false;
+        return true;
+      });
       if (enabledExs.length > 0) {
         activeMaterials.push(materialName);
         activeExercisesMap[materialName] = enabledExs;
