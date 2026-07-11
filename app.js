@@ -121,6 +121,11 @@ class WorkoutApp {
       headerClassEnd: document.getElementById('header-class-end'),
       headerRemaining: document.getElementById('header-remaining'),
       
+      // Main element for state class
+      appMain: document.getElementById('app-main'),
+      finishedOverlay: document.getElementById('finished-overlay'),
+      unifiedTimerLabel: document.getElementById('unified-timer-label'),
+
       // Active Workout HUD
       hudExerciseName: document.getElementById('hud-exercise-name'),
       hudMaterialInfo: document.getElementById('hud-material-info'),
@@ -131,19 +136,13 @@ class WorkoutApp {
       videoSlot: document.getElementById('video-slot'),
       videoFallbackImg: document.getElementById('video-fallback-img'),
       instructionText: document.getElementById('instruction-text'),
-      
+
       // Workout Controls (Trainer panel)
       btnPause: document.getElementById('btn-pause'),
       btnSkip: document.getElementById('btn-skip'),
       btnReset: document.getElementById('btn-reset'),
-      
-      // Countdown
-      countdownNumber: document.getElementById('countdown-number'),
-      countdownExerciseName: document.getElementById('countdown-exercise-name'),
-      countdownMaterialInfo: document.getElementById('countdown-material-info'),
-      countdownInstructionText: document.getElementById('countdown-instruction-text'),
-      
-      // Finished
+
+      // Finished flash overlay
       finishedExercise: document.getElementById('finished-exercise-text')
     };
   }
@@ -731,31 +730,27 @@ class WorkoutApp {
    * Start the countdown phase
    */
   startCountdown() {
-    this.switchView('countdown-view');
+    this.switchView('countdown');
     
-    // Set upcoming exercise info on countdown screen
-    this.elements.countdownExerciseName.textContent = this.activeExercise.exercise_name;
-    this.elements.countdownMaterialInfo.textContent = this.activeMaterial;
-    this.elements.countdownInstructionText.textContent = this.activeExercise.instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.";
+    // Set exercise info in right panel
+    this.elements.hudExerciseName.textContent = this.activeExercise.exercise_name;
+    this.elements.hudMaterialInfo.textContent = this.activeMaterial;
+    this.elements.instructionText.textContent = this.activeExercise.instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.";
 
-    this.elements.countdownNumber.textContent = this.countdownTime;
-    this.elements.countdownNumber.classList.remove('pulse');
-    void this.elements.countdownNumber.offsetWidth;
-    this.elements.countdownNumber.classList.add('pulse');
+    // Set initial countdown number in unified timer
+    this.elements.timerDigits.textContent = this.countdownTime;
 
     // Load YouTube iframe NOW (during countdown) so it's already playing when workout starts
     this._loadYouTubeIframe();
-    // Position the persistent frame over the countdown video slot
-    this._positionVideoFrame('.countdown-video-slot');
+    // Position the persistent frame over the right panel's video slot
+    this._positionVideoFrame('#video-slot');
 
     this.timer.start(this.activeTime, {
       countdownDuration: this.countdownTime,
-      
+
       onCountdownTick: (secs) => {
-        this.elements.countdownNumber.textContent = secs;
-        this.elements.countdownNumber.classList.remove('pulse');
-        void this.elements.countdownNumber.offsetWidth;
-        this.elements.countdownNumber.classList.add('pulse');
+        // Just update the unified timer digits — no separate countdown element needed
+        this.elements.timerDigits.textContent = secs;
       },
 
       onStateChange: (state) => {
@@ -778,17 +773,7 @@ class WorkoutApp {
    * Setup HUD and move video to active-view slot
    */
   startWorkoutHUD() {
-    this.switchView('active-view');
-    
-    // Set text
-    this.elements.hudExerciseName.textContent = this.activeExercise.exercise_name;
-    this.elements.hudMaterialInfo.textContent = this.activeMaterial;
-    
-    // Set instructions
-    this.elements.instructionText.textContent = this.activeExercise.instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.";
-
-    // Reposition persistent video frame to the active-view slot (no iframe reload = seamless!)
-    this._positionVideoFrame('#video-slot');
+    this.switchView('active');
 
     // Setup circular progress ring
     const circle = this.elements.timerProgressCircle;
@@ -799,7 +784,7 @@ class WorkoutApp {
     circle.classList.remove('low-time');
 
     // Reset Play/Pause trainer button
-    this.elements.btnPause.innerHTML = '⏸ <span style="margin-left: 5px;">PAUZE</span>';
+    this.elements.btnPause.innerHTML = '⏸ <span style="margin-left:5px;">PAUZE</span>';
     this.elements.btnPause.className = 'btn btn-cyan';
 
     // Initial digits draw
@@ -944,41 +929,37 @@ class WorkoutApp {
     this._stopYouTubeIframe();
     this.elements.spinBtn.disabled = false;
     this.elements.adminOpenBtn.disabled = false;
-    this.switchView('idle-view');
+    this.switchView('idle');
   }
 
   /**
    * Handle workout complete phase
    */
   handleWorkoutComplete() {
-    this.switchView('finished-view');
-    
-    this.elements.finishedExercise.innerHTML = `Lekker bezig! Oefening <span>${this.activeExercise.exercise_name}</span> is afgerond.`;
-    // Stop YouTube video
     this._stopYouTubeIframe();
 
-    // Wait 6 seconds showing finished panel, then transition back (or auto-spin)
+    // Show flash overlay
+    const overlay = this.elements.finishedOverlay;
+    this.elements.finishedExercise.textContent = this.activeExercise.exercise_name;
+    overlay.classList.add('show');
+
+    // Hide after 3 seconds, then return to idle or auto-spin
     setTimeout(() => {
-      if (this.timer.state === 'FINISHED' || this.timer.state === 'IDLE') {
-        this.elements.spinBtn.disabled = false;
-        this.elements.adminOpenBtn.disabled = false;
-        
-        // Auto-play: spin again if enabled and class isn't over yet
-        if (this.autoPlay && !this._classIsOver()) {
-          this.switchView('idle-view');
-          // Brief pause on idle screen before spinning again
-          setTimeout(() => {
-            if (this.autoPlay && !this._classIsOver()) {
-              this.handleSpin();
-            } else {
-              // Class is now over, stay on idle
-            }
-          }, 1200);
-        } else {
-          this.switchView('idle-view');
-        }
+      overlay.classList.remove('show');
+
+      this.elements.spinBtn.disabled = false;
+      this.elements.adminOpenBtn.disabled = false;
+
+      if (this.autoPlay && !this._classIsOver()) {
+        // Auto-spin after brief pause on idle
+        this.switchView('idle');
+        setTimeout(() => {
+          if (this.autoPlay && !this._classIsOver()) this.handleSpin();
+        }, 900);
+      } else {
+        this.switchView('idle');
       }
-    }, 6000);
+    }, 3000);
   }
 
   /**
@@ -1003,23 +984,14 @@ class WorkoutApp {
   }
 
   /**
-   * Switch displays
+   * Switch app state via CSS class on #app-main
+   * @param {'idle'|'countdown'|'active'} state
    */
-  switchView(viewId) {
-    const views = [
-      this.elements.idleView,
-      this.elements.countdownView,
-      this.elements.activeView,
-      this.elements.finishedView
-    ];
-
-    views.forEach(view => {
-      if (view.id === viewId) {
-        view.classList.add('active');
-      } else {
-        view.classList.remove('active');
-      }
-    });
+  switchView(state) {
+    const main = this.elements.appMain;
+    if (!main) return;
+    main.classList.remove('state-idle', 'state-countdown', 'state-active');
+    main.classList.add(`state-${state}`);
   }
 
   /**

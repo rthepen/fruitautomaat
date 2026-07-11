@@ -39,10 +39,9 @@
       </div>
     </header>
 
-    <!-- Main View Area -->
-    <main style="flex: 1; position: relative;">
+    <main id="app-main" class="app-main state-idle">
 
-      <!-- PERSISTENT VIDEO FRAME: lives outside views so iframe never reloads -->
+      <!-- PERSISTENT VIDEO FRAME: always in DOM, repositioned by JS -->
       <div id="persistent-video-frame" class="persistent-video-frame" style="display:none;">
         <iframe
           id="workout-video-iframe"
@@ -55,135 +54,93 @@
         <img id="video-fallback-img" class="video-fallback-img" src="" alt="">
       </div>
 
-      <!-- VIEW 1: Idle & Spinning Slot Machine Cabinet -->
-      <section id="idle-view" class="view active" aria-labelledby="slot-heading">
-        <h2 id="slot-heading" class="sr-only" style="display: none;">Fruitautomaat</h2>
-        
-        <div class="slot-machine-cabinet border-pulse-pink">
-          <div class="reels-wrapper">
-            
-            <!-- Reel 1: Material -->
-            <div class="reel-viewport" id="reel-viewport-material">
-              <div class="reel-selection-frame"></div>
-              <div class="reel-strip" id="reel-material">
-                <!-- Dynamically populated -->
-                <div class="reel-card">---</div>
+      <!-- FLASH OVERLAY: "Lekker bezig!" flashes on top, then fades -->
+      <div id="finished-overlay" class="finished-overlay" aria-live="polite">
+        <div class="finished-overlay-content">
+          <div class="finished-overlay-title">LEKKER BEZIG! 🔥</div>
+          <p id="finished-exercise-text" class="finished-overlay-sub">Oefening afgerond.</p>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════
+           LEFT PANEL — slot machine (idle) OR timer (workout)
+           ═══════════════════════════════════════════════════ -->
+      <div class="left-panel">
+
+        <!-- SLOT MACHINE (visible in idle) -->
+        <div class="slot-machine-panel" id="slot-machine-panel">
+          <div class="slot-machine-cabinet border-pulse-pink">
+            <div class="reels-wrapper">
+              <div class="reel-viewport" id="reel-viewport-material">
+                <div class="reel-selection-frame"></div>
+                <div class="reel-strip" id="reel-material">
+                  <div class="reel-card">---</div>
+                </div>
+              </div>
+              <div class="reel-viewport" id="reel-viewport-exercise">
+                <div class="reel-selection-frame"></div>
+                <div class="reel-strip" id="reel-exercise">
+                  <div class="reel-card">---</div>
+                </div>
+              </div>
+              <div class="reel-viewport" id="reel-viewport-time">
+                <div class="reel-selection-frame"></div>
+                <div class="reel-strip" id="reel-time">
+                  <div class="reel-card">---</div>
+                </div>
               </div>
             </div>
-
-            <!-- Reel 2: Exercise -->
-            <div class="reel-viewport" id="reel-viewport-exercise">
-              <div class="reel-selection-frame"></div>
-              <div class="reel-strip" id="reel-exercise">
-                <!-- Dynamically populated -->
-                <div class="reel-card">---</div>
-              </div>
+            <div class="slot-controls">
+              <button id="spin-btn" class="spin-button">SPIN</button>
             </div>
-
-            <!-- Reel 3: Time -->
-            <div class="reel-viewport" id="reel-viewport-time">
-              <div class="reel-selection-frame"></div>
-              <div class="reel-strip" id="reel-time">
-                <!-- Dynamically populated -->
-                <div class="reel-card">---</div>
-              </div>
-            </div>
-
-          </div>
-
-          <div class="slot-controls">
-            <!-- Giant Spin button -->
-            <button id="spin-btn" class="spin-button">SPIN</button>
           </div>
         </div>
-      </section>
 
-      <!-- VIEW 2: Get Ready Countdown Phase -->
-      <section id="countdown-view" class="view" aria-labelledby="countdown-heading">
-        <h2 id="countdown-heading" class="sr-only" style="display: none;">Aftellen</h2>
-        <div class="countdown-layout">
-          <!-- Left: countdown info -->
-          <div class="countdown-wrapper">
-            <div class="countdown-label text-pulse-cyan">Maak je klaar voor:</div>
-            <div id="countdown-exercise-name" class="countdown-exercise-name">Dead Ball Jump Slams</div>
-            <div id="countdown-material-info" class="countdown-material-info">Deadball</div>
-            <div id="countdown-number" class="countdown-number">5</div>
-            <div id="countdown-instruction-card" class="countdown-instruction-card">
-              <div class="countdown-instruction-title">Instructie</div>
-              <p id="countdown-instruction-text" class="countdown-instruction-text">Spring explosief in de lucht...</p>
-            </div>
+        <!-- TIMER PANEL (visible in countdown + active) -->
+        <div class="unified-timer-panel" id="unified-timer-panel">
+          <!-- Label: "MAAK JE KLAAR" during countdown, hidden during active -->
+          <div class="unified-timer-label" id="unified-timer-label">MAAK JE KLAAR</div>
+          <!-- The big number — used for both countdown and workout timer -->
+          <div class="unified-timer-circle-wrap">
+            <svg class="timer-svg" viewBox="0 0 480 480">
+              <circle class="timer-track" cx="240" cy="240" r="220"></circle>
+              <circle id="timer-progress-circle" class="timer-progress" cx="240" cy="240" r="220"></circle>
+            </svg>
+            <div id="timer-digits" class="timer-digits">10</div>
           </div>
-          <!-- Right: video preview slot (filled by persistent-video-frame via CSS) -->
-          <div class="countdown-video-slot"></div>
-        </div>
-      </section>
-
-      <!-- VIEW 3: Active Workout HUD & Video Playback -->
-      <section id="active-view" class="view" aria-labelledby="hud-exercise-name">
-        <div class="workout-hud">
-          <!-- Exercise Header -->
-          <div class="workout-header">
-            <h2 id="hud-exercise-name" class="hud-exercise-name">Dead Ball Jump Slams</h2>
-            <div id="hud-material-info" class="hud-material-info">Deadball</div>
-          </div>
-
-          <!-- Body split: Clock left, Video/Info right -->
-          <div class="workout-body">
-            
-            <!-- Left Side: Circular Timer -->
-            <div class="timer-panel">
-              <div class="timer-circle-container">
-                <svg class="timer-svg" viewBox="0 0 480 480">
-                  <!-- Background ring -->
-                  <circle class="timer-track" cx="240" cy="240" r="220"></circle>
-                  <!-- Foreground running progress ring -->
-                  <circle id="timer-progress-circle" class="timer-progress" cx="240" cy="240" r="220"></circle>
-                </svg>
-                <!-- Digital numeric clock digits -->
-                <div id="timer-digits" class="timer-digits">40</div>
-              </div>
-            </div>
-
-            <!-- Right Side: Video frame & Instructions -->
-            <div class="media-panel">
-              <!-- VIDEO SLOT: persistent-video-frame is positioned here by CSS -->
-              <div class="video-slot" id="video-slot"></div>
-
-              <!-- Instruction textual description -->
-              <div class="instruction-card">
-                <div class="instruction-title">Instructie</div>
-                <p id="instruction-text" class="instruction-text">
-                  Spring explosief in de lucht en gooi de bal hard op de grond.
-                </p>
-              </div>
-            </div>
-
-          </div>
-
-          <!-- Bottom Trainer Controls -->
-          <nav class="trainer-bar" aria-label="Trainer bediening">
+          <!-- Trainer buttons (below timer) -->
+          <nav class="trainer-bar" id="trainer-bar" aria-label="Trainer bediening">
             <button id="btn-pause" class="btn btn-cyan">
-              ⏸ <span style="margin-left: 5px;">PAUZE</span>
+              ⏸ <span style="margin-left:5px;">PAUZE</span>
             </button>
             <button id="btn-skip" class="btn btn-cyan">
-              ⏭ <span style="margin-left: 5px;">OEFENING AFRONDEN</span>
+              ⏭ <span style="margin-left:5px;">AFRONDEN</span>
             </button>
             <button id="btn-reset" class="btn btn-pink">
-              🔄 <span style="margin-left: 5px;">STOP / RESET</span>
+              🔄 <span style="margin-left:5px;">STOP</span>
             </button>
           </nav>
         </div>
-      </section>
 
-      <!-- VIEW 4: Workout Finished Celebration -->
-      <section id="finished-view" class="view" aria-labelledby="finished-heading">
-        <div class="finished-panel">
-          <h2 id="finished-heading" class="finished-title text-pulse-cyan">LEKKER BEZIG!</h2>
-          <p id="finished-exercise-text" class="finished-exercise">
-            Oefening is afgerond.
-          </p>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════
+           RIGHT PANEL — exercise info + video (hidden in idle)
+           ═══════════════════════════════════════════════════ -->
+      <div class="right-panel" id="right-panel">
+        <!-- Exercise name + material -->
+        <div class="exercise-header">
+          <h2 id="hud-exercise-name" class="hud-exercise-name">---</h2>
+          <div id="hud-material-info" class="hud-material-info">---</div>
         </div>
-      </section>
+        <!-- Video slot -->
+        <div class="video-slot" id="video-slot"></div>
+        <!-- Instruction card -->
+        <div class="instruction-card">
+          <div class="instruction-title">Instructie</div>
+          <p id="instruction-text" class="instruction-text">---</p>
+        </div>
+      </div>
 
     </main>
 
