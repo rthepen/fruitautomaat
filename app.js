@@ -209,6 +209,13 @@ class WorkoutApp {
         if (!this.database[matName]) {
           this.database[matName] = [];
         }
+
+        // Ensure globally unique IDs by prefixing with material name
+        const prefix = matName.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_';
+        if (!exercise.id.startsWith(prefix)) {
+          exercise.id = prefix + exercise.id;
+        }
+
         this.database[matName].push(exercise);
       });
     });
