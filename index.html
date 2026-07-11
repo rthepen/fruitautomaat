@@ -41,7 +41,20 @@
 
     <!-- Main View Area -->
     <main style="flex: 1; position: relative;">
-      
+
+      <!-- PERSISTENT VIDEO FRAME: lives outside views so iframe never reloads -->
+      <div id="persistent-video-frame" class="persistent-video-frame" style="display:none;">
+        <iframe
+          id="workout-video-iframe"
+          src=""
+          frameborder="0"
+          allow="autoplay; encrypted-media"
+          allowfullscreen
+          style="position:absolute;inset:0;width:100%;height:100%;border:0;"
+        ></iframe>
+        <img id="video-fallback-img" class="video-fallback-img" src="" alt="">
+      </div>
+
       <!-- VIEW 1: Idle & Spinning Slot Machine Cabinet -->
       <section id="idle-view" class="view active" aria-labelledby="slot-heading">
         <h2 id="slot-heading" class="sr-only" style="display: none;">Fruitautomaat</h2>
@@ -88,15 +101,20 @@
       <!-- VIEW 2: Get Ready Countdown Phase -->
       <section id="countdown-view" class="view" aria-labelledby="countdown-heading">
         <h2 id="countdown-heading" class="sr-only" style="display: none;">Aftellen</h2>
-        <div class="countdown-wrapper">
-          <div class="countdown-label text-pulse-cyan">Maak je klaar voor:</div>
-          <div id="countdown-exercise-name" class="countdown-exercise-name">Dead Ball Jump Slams</div>
-          <div id="countdown-material-info" class="countdown-material-info">Deadball</div>
-          <div id="countdown-number" class="countdown-number">5</div>
-          <div id="countdown-instruction-card" class="countdown-instruction-card">
-            <div class="countdown-instruction-title">Instructie</div>
-            <p id="countdown-instruction-text" class="countdown-instruction-text">Spring explosief in de lucht...</p>
+        <div class="countdown-layout">
+          <!-- Left: countdown info -->
+          <div class="countdown-wrapper">
+            <div class="countdown-label text-pulse-cyan">Maak je klaar voor:</div>
+            <div id="countdown-exercise-name" class="countdown-exercise-name">Dead Ball Jump Slams</div>
+            <div id="countdown-material-info" class="countdown-material-info">Deadball</div>
+            <div id="countdown-number" class="countdown-number">5</div>
+            <div id="countdown-instruction-card" class="countdown-instruction-card">
+              <div class="countdown-instruction-title">Instructie</div>
+              <p id="countdown-instruction-text" class="countdown-instruction-text">Spring explosief in de lucht...</p>
+            </div>
           </div>
+          <!-- Right: video preview slot (filled by persistent-video-frame via CSS) -->
+          <div class="countdown-video-slot"></div>
         </div>
       </section>
 
@@ -128,20 +146,8 @@
 
             <!-- Right Side: Video frame & Instructions -->
             <div class="media-panel">
-              <!-- Video Frame container (PiP layout) -->
-              <div class="video-frame" id="video-frame">
-                <!-- YouTube embed iframe (autoplay, muted, loop) -->
-                <iframe
-                  id="workout-video-iframe"
-                  src=""
-                  frameborder="0"
-                  allow="autoplay; encrypted-media"
-                  allowfullscreen
-                  style="width:100%;height:100%;border:0;"
-                ></iframe>
-                <!-- Fallback thumbnail image when no YouTube URL -->
-                <img id="video-fallback-img" class="video-fallback-img" src="" alt="Workout oefening visualisatie">
-              </div>
+              <!-- VIDEO SLOT: persistent-video-frame is positioned here by CSS -->
+              <div class="video-slot" id="video-slot"></div>
 
               <!-- Instruction textual description -->
               <div class="instruction-card">

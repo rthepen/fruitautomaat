@@ -127,7 +127,8 @@ class WorkoutApp {
       timerDigits: document.getElementById('timer-digits'),
       timerProgressCircle: document.getElementById('timer-progress-circle'),
       workoutIframe: document.getElementById('workout-video-iframe'),
-      videoFrame: document.getElementById('video-frame'),
+      persistentVideoFrame: document.getElementById('persistent-video-frame'),
+      videoSlot: document.getElementById('video-slot'),
       videoFallbackImg: document.getElementById('video-fallback-img'),
       instructionText: document.getElementById('instruction-text'),
       
@@ -739,15 +740,19 @@ class WorkoutApp {
 
     this.elements.countdownNumber.textContent = this.countdownTime;
     this.elements.countdownNumber.classList.remove('pulse');
-    void this.elements.countdownNumber.offsetWidth; // trigger reflow
+    void this.elements.countdownNumber.offsetWidth;
     this.elements.countdownNumber.classList.add('pulse');
+
+    // Load YouTube iframe NOW (during countdown) so it's already playing when workout starts
+    this._loadYouTubeIframe();
+    // Position the persistent frame over the countdown video slot
+    this._positionVideoFrame('.countdown-video-slot');
 
     this.timer.start(this.activeTime, {
       countdownDuration: this.countdownTime,
       
       onCountdownTick: (secs) => {
         this.elements.countdownNumber.textContent = secs;
-        // Re-trigger visual pulse animation
         this.elements.countdownNumber.classList.remove('pulse');
         void this.elements.countdownNumber.offsetWidth;
         this.elements.countdownNumber.classList.add('pulse');
@@ -770,7 +775,7 @@ class WorkoutApp {
   }
 
   /**
-   * Setup HUD and start playing local video
+   * Setup HUD and move video to active-view slot
    */
   startWorkoutHUD() {
     this.switchView('active-view');
@@ -781,9 +786,9 @@ class WorkoutApp {
     
     // Set instructions
     this.elements.instructionText.textContent = this.activeExercise.instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.";
-    
-    // Load YouTube embed
-    this._loadYouTubeIframe();
+
+    // Reposition persistent video frame to the active-view slot (no iframe reload = seamless!)
+    this._positionVideoFrame('#video-slot');
 
     // Setup circular progress ring
     const circle = this.elements.timerProgressCircle;
@@ -801,35 +806,61 @@ class WorkoutApp {
     this.updateHUDTimer(this.activeTime);
   }
 
+  /**
+   * Position the persistent-video-frame absolutely over a target slot element.
+   * @param {string} slotSelector - CSS selector for the slot element
+   */
+  _positionVideoFrame(slotSelector) {
+    const slot = document.querySelector(slotSelector);
+    const pvf = this.elements.persistentVideoFrame;
+    if (!slot || !pvf) return;
+    
+    const main = document.querySelector('main');
+    const mainRect = main.getBoundingClientRect();
+    const slotRect = slot.getBoundingClientRect();
+    
+    pvf.style.display = 'block';
+    pvf.style.left   = (slotRect.left - mainRect.left) + 'px';
+    pvf.style.top    = (slotRect.top  - mainRect.top)  + 'px';
+    pvf.style.width  = slotRect.width  + 'px';
+    pvf.style.height = slotRect.height + 'px';
+  }
+
+  /**
+   * Hide the persistent video frame
+   */
+  _hideVideoFrame() {
+    const pvf = this.elements.persistentVideoFrame;
+    if (pvf) pvf.style.display = 'none';
+  }
+
   _loadYouTubeIframe() {
     const iframe = this.elements.workoutIframe;
     const fallback = this.elements.videoFallbackImg;
-    const frame = this.elements.videoFrame;
+    const pvf = this.elements.persistentVideoFrame;
 
     const embedUrl = (this.activeExercise.video_search_url || '').trim();
 
     if (embedUrl) {
-      // Extract video ID for loop param (loop requires playlist=videoId)
       const videoId = embedUrl.split('/embed/')[1]?.split('?')[0] || '';
       const params = new URLSearchParams({
-        autoplay:        '1',
-        mute:            '1',
-        loop:            '1',
-        playlist:        videoId,
-        controls:        '0',
-        modestbranding:  '1',
-        rel:             '0',
-        iv_load_policy:  '3',
-        fs:              '0'
+        autoplay:       '1',
+        mute:           '1',
+        loop:           '1',
+        playlist:       videoId,
+        controls:       '0',
+        modestbranding: '1',
+        rel:            '0',
+        iv_load_policy: '3',
+        fs:             '0'
       });
       const baseUrl = embedUrl.split('?')[0];
       iframe.src = `${baseUrl}?${params.toString()}`;
       iframe.style.display = 'block';
       fallback.style.display = 'none';
       fallback.src = '';
-      frame.classList.remove('use-fallback');
+      if (pvf) pvf.classList.remove('use-fallback');
     } else {
-      // No YouTube URL — show thumbnail or placeholder
       iframe.src = '';
       iframe.style.display = 'none';
       const thumb = (this.activeExercise.thumbnail || '').trim();
@@ -838,20 +869,17 @@ class WorkoutApp {
         fallback.style.display = 'block';
         fallback.alt = this.activeExercise.exercise_name;
       } else {
-        // No thumbnail either — show styled placeholder via CSS class
         fallback.src = '';
         fallback.style.display = 'none';
       }
-      frame.classList.add('use-fallback');
+      if (pvf) pvf.classList.add('use-fallback');
     }
   }
 
-  /**
-   * Stop the YouTube iframe (unload it to stop playback)
-   */
   _stopYouTubeIframe() {
     const iframe = this.elements.workoutIframe;
     if (iframe) iframe.src = '';
+    this._hideVideoFrame();
   }
 
   /**
