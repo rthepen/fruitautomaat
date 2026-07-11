@@ -198,57 +198,77 @@ header {
    SINGLE-SCREEN APP LAYOUT
    ========================================================================== */
 
-/* Main = two-column flex, fills all available height */
+/* Main = vertical flex to fit persistent top-pinned slot machine */
 .app-main {
   flex: 1;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   overflow: hidden;
   position: relative;
   min-height: 0;
+  align-items: center;
+  justify-content: center;
 }
 
-/* LEFT PANEL */
+/* Slot machine panel: always visible at the top */
+.slot-machine-panel {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0.5rem 2rem;
+  box-sizing: border-box;
+}
+
+.slot-machine-cabinet {
+  width: 100%;
+  max-width: 1400px;
+}
+
+/* Workout panel container: holds left (timer) and right (info/video) */
+.workout-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* LEFT PANEL (Timer) */
 .left-panel {
-  width: clamp(260px, 38%, 480px);
+  width: clamp(260px, 35%, 450px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 0.5rem 1rem 0.5rem 1.5rem;
+  padding: 0.5rem 1rem;
   position: relative;
   min-height: 0;
 }
 
-/* RIGHT PANEL */
+/* RIGHT PANEL (Media & Instructions) */
 .right-panel {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  padding: 0.5rem 1.5rem 0.5rem 0.5rem;
+  padding: 0.5rem 2rem 0.5rem 0.5rem;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
 
 /* ── State: IDLE ────────────────────── */
-.state-idle .left-panel {
-  width: 100%;
-  max-width: none;
-  padding: 1.5rem 3rem;
-}
-.state-idle .slot-machine-cabinet {
-  width: 100%;
-  max-width: 1400px;
-}
+.state-idle .workout-panel       { display: none; }
 .state-idle .slot-machine-panel  { display: flex; }
-.state-idle .unified-timer-panel { display: none; }
-.state-idle .right-panel         { display: none; }
+/* Center the cabinet vertically when idle */
+.state-idle .slot-machine-panel  { margin: auto; }
 
 /* ── State: COUNTDOWN ───────────────── */
-.state-countdown .slot-machine-panel  { display: none; }
+.state-countdown .workout-panel       { display: flex; }
 .state-countdown .unified-timer-panel { display: flex; }
 .state-countdown .right-panel         { display: flex; }
 .state-countdown .trainer-bar         { display: none; }   /* no controls during countdown */
@@ -257,20 +277,13 @@ header {
 .state-countdown .timer-svg           { opacity: 0; }
 
 /* ── State: ACTIVE ──────────────────── */
-.state-active .slot-machine-panel  { display: none; }
+.state-active .workout-panel       { display: flex; }
 .state-active .unified-timer-panel { display: flex; }
 .state-active .right-panel         { display: flex; }
 .state-active .trainer-bar         { display: flex; }
 .state-active .unified-timer-label { display: none; }
 .state-active .timer-svg           { opacity: 1; }
 
-/* ── Slot machine panel ─────────────── */
-.slot-machine-panel {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
 /* ── Unified timer panel ─────────────── */
 .unified-timer-panel {

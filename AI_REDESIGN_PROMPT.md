@@ -21,27 +21,32 @@ A **fullscreen gym training tool** for group fitness classes. A trainer runs thi
 
 ### 📐 Layout — Single Screen, Always Visible
 
-The entire app must fit on **one screen with no scrolling**, split into:
+The entire app must fit on **one screen with no scrolling (desktop only, no mobile layout)**, structured vertically:
 
-**LEFT PANEL:**
-- In **idle state**: Fills the **entire width of the screen** (100% width) to show a large slot machine cabinet with 3 spinning reels (equipment | exercise name | duration in seconds) and a giant "SPIN" button.
-- In **countdown + workout state**: Shrinks to the left side (≈ 38% width) and replaces the slot machine with a large circular progress ring and a big number that:
-  - During "get ready": counts down from N to 0 (e.g. 10, 9, 8…), labeled "MAAK JE KLAAR" in neon cyan, number pulses with each tick
-  - During workout: seamlessly transitions to counting down the workout duration (e.g. 90, 89, 88…), ring fills/empties as time passes, last 5 seconds glow pink/red
-  - Below the timer ring: PAUZE / AFRONDEN / STOP buttons (only visible during workout, hidden during countdown)
+**TOP PORTION (Slot Machine Cabinet):**
+- Spans the **entire width of the screen** (100% width) and is **always visible in the exact same pinned position**.
+- Shows 3 spinning reels (equipment | exercise name | duration in seconds) inside a pink neon highlighted cabinet, with a giant "SPIN" button below the reels.
+- In idle state, it is centered vertically on the screen.
+- During countdown and active workout states, it stays pinned at the top of the screen to show the selected exercise as a reference.
 
-**RIGHT PANEL:**
-- Hidden in idle state (allowing LEFT PANEL to take 100% width)
-- Visible during countdown and workout (taking the remaining ≈ 62% width):
-  - Exercise name (large, uppercase, neon green glow)
-  - Equipment/material name (smaller, gray)
-  - YouTube video (iframe, autoplay + muted + loop, no controls). The video **must stay loaded and playing** when transitioning from countdown to workout — do NOT reload the iframe on view change. Use a persistent iframe outside the view sections, positioned via `getBoundingClientRect()`.
-  - Instruction text card (dark glass card, instruction text in white)
+**BOTTOM PORTION (Workout Panel):**
+- Hidden during idle state.
+- Visible during countdown and active workout states, taking the remaining space below the slot machine, split into:
+  - **Left side (≈ 35% width):** Large circular progress ring with a big digital number inside.
+    - During "get ready": counts down from N to 0, labeled "MAAK JE KLAAR" in neon cyan, number pulses.
+    - During workout: seamlessly transitions to counting down the workout duration (e.g. 90, 89, 88…), progress ring drains, last 5 seconds glow pink/red.
+    - Below: PAUZE / AFRONDEN / STOP buttons (only visible during workout phase).
+  - **Right side (≈ 65% width):** Exercise info and video.
+    - Exercise name (large, uppercase, neon green glow).
+    - Equipment/material name (smaller, gray).
+    - YouTube video (iframe, autoplay + muted + loop, no controls). The video is loaded in a persistent iframe outside the state containers, positioned absolutely over a `#video-slot` placeholder using `getBoundingClientRect()`.
+    - Instruction text card (dark glass card with white text).
 
 **"LEKKER BEZIG!" Flash Overlay:**
 - When an exercise completes, a full-screen semi-transparent overlay appears with a large animated "LEKKER BEZIG! 🔥" title and the exercise name
 - Auto-dismisses after 3 seconds with a fade-out
-- App returns to idle state (slot machine visible again)
+- App returns to idle state (slot machine centered again)
+
 
 **Header (always visible, compact):**
 - App logo "Workout Slots" (left)
