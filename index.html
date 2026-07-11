@@ -41,19 +41,6 @@
 
     <main id="app-main" class="app-main state-idle">
 
-      <!-- PERSISTENT VIDEO FRAME: always in DOM, repositioned by JS -->
-      <div id="persistent-video-frame" class="persistent-video-frame" style="display:none;">
-        <iframe
-          id="workout-video-iframe"
-          src=""
-          frameborder="0"
-          allow="autoplay; encrypted-media"
-          allowfullscreen
-          style="position:absolute;inset:0;width:100%;height:100%;border:0;"
-        ></iframe>
-        <img id="video-fallback-img" class="video-fallback-img" src="" alt="">
-      </div>
-
       <!-- FLASH OVERLAY: "Lekker bezig!" flashes on top, then fades -->
       <div id="finished-overlay" class="finished-overlay" aria-live="polite">
         <div class="finished-overlay-content">
@@ -129,7 +116,17 @@
             <div id="hud-material-info" class="hud-material-info">---</div>
           </div>
           <!-- Video slot -->
-          <div class="video-slot" id="video-slot"></div>
+          <div class="video-slot" id="video-slot">
+            <iframe
+              id="workout-video-iframe"
+              src=""
+              frameborder="0"
+              allow="autoplay; encrypted-media"
+              allowfullscreen
+              style="display:none;"
+            ></iframe>
+            <img id="video-fallback-img" class="video-fallback-img" src="" alt="" style="display:none;">
+          </div>
           <!-- Instruction card -->
           <div class="instruction-card">
             <div class="instruction-title">Instructie</div>

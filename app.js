@@ -71,7 +71,8 @@ class WorkoutApp {
       this.showLoading(false);
       
       // Transition to Idle slot machine view
-      this.switchView('idle-view');
+      this.switchView('idle');
+      this.setStandbyState();
     } catch (err) {
       console.error("Failed to initialize database:", err);
       alert("Fout bij inladen workout database. Controleer of de app via een webserver (HTTP) draait.");
@@ -132,7 +133,6 @@ class WorkoutApp {
       timerDigits: document.getElementById('timer-digits'),
       timerProgressCircle: document.getElementById('timer-progress-circle'),
       workoutIframe: document.getElementById('workout-video-iframe'),
-      persistentVideoFrame: document.getElementById('persistent-video-frame'),
       videoSlot: document.getElementById('video-slot'),
       videoFallbackImg: document.getElementById('video-fallback-img'),
       instructionText: document.getElementById('instruction-text'),
@@ -792,37 +792,21 @@ class WorkoutApp {
   }
 
   /**
-   * Position the persistent-video-frame absolutely over a target slot element.
-   * @param {string} slotSelector - CSS selector for the slot element
-   */
-  _positionVideoFrame(slotSelector) {
-    const slot = document.querySelector(slotSelector);
-    const pvf = this.elements.persistentVideoFrame;
-    if (!slot || !pvf) return;
-    
-    const main = document.querySelector('main');
-    const mainRect = main.getBoundingClientRect();
-    const slotRect = slot.getBoundingClientRect();
-    
-    pvf.style.display = 'block';
-    pvf.style.left   = (slotRect.left - mainRect.left) + 'px';
-    pvf.style.top    = (slotRect.top  - mainRect.top)  + 'px';
-    pvf.style.width  = slotRect.width  + 'px';
-    pvf.style.height = slotRect.height + 'px';
-  }
-
-  /**
-   * Hide the persistent video frame
+   * Hide video and fallback image elements inside the video slot
    */
   _hideVideoFrame() {
-    const pvf = this.elements.persistentVideoFrame;
-    if (pvf) pvf.style.display = 'none';
+    const iframe = this.elements.workoutIframe;
+    const fallback = this.elements.videoFallbackImg;
+    const slot = this.elements.videoSlot;
+    if (iframe) iframe.style.display = 'none';
+    if (fallback) fallback.style.display = 'none';
+    if (slot) slot.classList.add('use-fallback');
   }
 
   _loadYouTubeIframe() {
     const iframe = this.elements.workoutIframe;
     const fallback = this.elements.videoFallbackImg;
-    const pvf = this.elements.persistentVideoFrame;
+    const slot = this.elements.videoSlot;
 
     const embedUrl = (this.activeExercise.video_search_url || '').trim();
 
@@ -842,9 +826,19 @@ class WorkoutApp {
       const baseUrl = embedUrl.split('?')[0];
       iframe.src = `${baseUrl}?${params.toString()}`;
       iframe.style.display = 'block';
-      fallback.style.display = 'none';
-      fallback.src = '';
-      if (pvf) pvf.classList.remove('use-fallback');
+      
+      // Always show thumbnail as background layer behind the iframe
+      const thumb = (this.activeExercise.thumbnail || '').trim();
+      if (thumb) {
+        fallback.src = thumb;
+        fallback.style.display = 'block';
+        fallback.alt = this.activeExercise.exercise_name;
+      } else {
+        fallback.src = '';
+        fallback.style.display = 'none';
+      }
+      
+      if (slot) slot.classList.remove('use-fallback');
     } else {
       iframe.src = '';
       iframe.style.display = 'none';
@@ -857,7 +851,7 @@ class WorkoutApp {
         fallback.src = '';
         fallback.style.display = 'none';
       }
-      if (pvf) pvf.classList.add('use-fallback');
+      if (slot) slot.classList.add('use-fallback');
     }
   }
 
@@ -930,6 +924,7 @@ class WorkoutApp {
     this.elements.spinBtn.disabled = false;
     this.elements.adminOpenBtn.disabled = false;
     this.switchView('idle');
+    this.setStandbyState();
   }
 
   /**
@@ -958,8 +953,22 @@ class WorkoutApp {
         }, 900);
       } else {
         this.switchView('idle');
+        this.setStandbyState();
       }
     }, 3000);
+  }
+
+  /**
+   * Resets all bottom panel labels to a clean standby look
+   */
+  setStandbyState() {
+    this.elements.hudExerciseName.textContent = "DRUK OP SPIN";
+    this.elements.hudMaterialInfo.textContent = "---";
+    this.elements.instructionText.textContent = "Druk op de roze SPIN knop om een willekeurige oefening te selecteren.";
+    this.elements.timerDigits.textContent = "00";
+    if (this.elements.timerProgressCircle) {
+      this.elements.timerProgressCircle.style.strokeDashoffset = '0';
+    }
   }
 
   /**
@@ -992,9 +1001,6 @@ class WorkoutApp {
     if (this.slotMachine) {
       setTimeout(() => {
         this.slotMachine.realign();
-        if (state === 'countdown' || state === 'active') {
-          this._positionVideoFrame('#video-slot');
-        }
       }, 60);
     }
   }

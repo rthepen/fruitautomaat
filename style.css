@@ -262,13 +262,20 @@ header {
 }
 
 /* ── State: IDLE ────────────────────── */
-.state-idle .workout-panel       { display: none; }
+.state-idle .workout-panel {
+  display: flex;
+  opacity: 0.3;
+  pointer-events: none;
+  filter: grayscale(0.5);
+  transition: opacity 0.4s ease, filter 0.4s ease;
+}
 .state-idle .slot-machine-panel  { display: flex; }
-/* Center the cabinet vertically when idle */
-.state-idle .slot-machine-panel  { margin: auto; }
+.state-idle .trainer-bar         { display: none; }
+.state-idle .timer-svg           { opacity: 0; }
+.state-idle .unified-timer-label { display: block; }
 
 /* ── State: COUNTDOWN ───────────────── */
-.state-countdown .workout-panel       { display: flex; }
+.state-countdown .workout-panel       { display: flex; opacity: 1; filter: none; }
 .state-countdown .unified-timer-panel { display: flex; }
 .state-countdown .right-panel         { display: flex; }
 .state-countdown .trainer-bar         { display: none; }   /* no controls during countdown */
@@ -277,7 +284,7 @@ header {
 .state-countdown .timer-svg           { opacity: 0; }
 
 /* ── State: ACTIVE ──────────────────── */
-.state-active .workout-panel       { display: flex; }
+.state-active .workout-panel       { display: flex; opacity: 1; filter: none; }
 .state-active .unified-timer-panel { display: flex; }
 .state-active .right-panel         { display: flex; }
 .state-active .trainer-bar         { display: flex; }
@@ -410,7 +417,7 @@ header {
   background: linear-gradient(135deg, #181822 0%, #0d0d12 100%);
   border: 4px solid #28283a;
   border-radius: 24px;
-  padding: 2.5rem;
+  padding: 1rem;
   width: 95%;
   max-width: 1200px;
   box-shadow: 
@@ -419,7 +426,7 @@ header {
     0 0 30px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 0.8rem;
   position: relative;
 }
 
@@ -448,7 +455,7 @@ header {
 
 /* Individual Reel Viewport */
 .reel-viewport {
-  height: 360px; /* displays exactly 3 cards, middle is active */
+  height: 200px; /* displays exactly 2 cards visually, middle is active */
   overflow: hidden;
   position: relative;
   background: #0f0f15;
@@ -469,7 +476,7 @@ header {
   position: absolute;
   left: 0;
   right: 0;
-  height: 100px;
+  height: 50px;
   z-index: 3;
   pointer-events: none;
 }
@@ -485,10 +492,10 @@ header {
 /* Highlight frame for middle card */
 .reel-selection-frame {
   position: absolute;
-  top: 120px; /* matches height of 1 card */
+  top: 50px; /* centers the 100px card inside 200px viewport */
   left: -2px;
   right: -2px;
-  height: 120px;
+  height: 100px;
   border-top: 3px solid var(--neon-pink);
   border-bottom: 3px solid var(--neon-pink);
   background: rgba(255, 0, 127, 0.04);
@@ -514,7 +521,7 @@ header {
 
 /* Cards inside reels */
 .reel-card {
-  height: 120px;
+  height: 100px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -768,13 +775,53 @@ header {
   line-height: 1.5;
 }
 
-/* Video slot placeholder in active-view (takes space where persistent-video-frame floats) */
 .video-slot {
   width: 100%;
   aspect-ratio: 16/9;
   max-height: min(30vh, 280px);
   flex-shrink: 1;
   min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background-color: #050508;
+  border: 4px solid #252535;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.video-slot iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.video-slot .video-fallback-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Standby/No video placeholder look */
+.video-slot.use-fallback::after {
+  content: '📹 STANDBY';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555577;
+  font-size: clamp(0.85rem, 1.5vw, 1.1rem);
+  letter-spacing: 2px;
+  pointer-events: none;
+  font-family: var(--font-display);
+}
+/* Hide the placeholder if there's a valid thumbnail source loaded */
+.video-slot.use-fallback:has(.video-fallback-img[src]:not([src=""]):not([src="http://localhost:8000/"]))::after {
+  display: none;
 }
 
 /* ==========================================================================
@@ -1497,69 +1544,6 @@ header {
   .trainer-bar {
     margin-top: 0.5rem;
   }
-}
-
-/* ==========================================================================
-   SLOT MACHINE COLLAPSE OVERRIDES DURING WORKOUT
-   ========================================================================== */
-
-.state-countdown .slot-machine-panel,
-.state-active .slot-machine-panel {
-  padding: 0.1rem 2rem !important;
-}
-
-.state-countdown .slot-machine-cabinet,
-.state-active .slot-machine-cabinet {
-  padding: 0.4rem 1rem !important;
-  gap: 0.4rem !important;
-}
-
-.state-countdown .slot-controls,
-.state-active .slot-controls {
-  display: none !important; /* Hide SPIN button during workout */
-}
-
-.state-countdown .reel-viewport,
-.state-active .reel-viewport {
-  height: 90px !important; /* Show exactly the middle active card */
-}
-
-.state-countdown .reel-selection-frame,
-.state-active .reel-selection-frame {
-  top: 0 !important;
-  height: 90px !important;
-  border-width: 2px !important;
-}
-
-.state-countdown .reel-card,
-.state-active .reel-card {
-  height: 90px !important;
-  padding: 0.1rem 0.5rem !important;
-  border-bottom: 0 !important;
-}
-
-/* Adjust active card transforms so it doesn't get cut off */
-.state-countdown .reel-card.active,
-.state-active .reel-card.active {
-  transform: none !important;
-}
-
-/* Adjust card titles and font sizes to be more compact during workout */
-.state-countdown .card-title,
-.state-active .card-title {
-  font-size: clamp(0.9rem, 1.5vw, 1.2rem) !important;
-}
-.state-countdown .exercise-title,
-.state-active .exercise-title {
-  font-size: clamp(0.9rem, 1.5vw, 1.2rem) !important;
-}
-.state-countdown .card-time,
-.state-active .card-time {
-  font-size: clamp(1.4rem, 2.2vw, 1.8rem) !important;
-}
-.state-countdown .card-unit,
-.state-active .card-unit {
-  font-size: 0.7rem !important;
 }
 
 
