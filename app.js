@@ -742,8 +742,7 @@ class WorkoutApp {
 
     // Load YouTube iframe NOW (during countdown) so it's already playing when workout starts
     this._loadYouTubeIframe();
-    // Position the persistent frame over the right panel's video slot
-    this._positionVideoFrame('#video-slot');
+
 
     this.timer.start(this.activeTime, {
       countdownDuration: this.countdownTime,
