@@ -317,7 +317,8 @@ class SlotMachine {
           }
           if (originalIdx === -1) originalIdx = 0;
         }
-        reel.offset = -(originalIdx * reel.itemHeight) + reel.itemHeight;
+        // Use getBaselineOffset() instead of itemHeight for proper vertical centering
+        reel.offset = -(originalIdx * reel.itemHeight) + reel.getBaselineOffset();
         reel.updateTransform();
         reel.highlightActiveCard();
       }
