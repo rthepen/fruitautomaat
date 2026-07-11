@@ -801,40 +801,47 @@ class WorkoutApp {
     this.updateHUDTimer(this.activeTime);
   }
 
-  /**
-   * Build and set the YouTube embed iframe src for the current exercise
-   */
   _loadYouTubeIframe() {
     const iframe = this.elements.workoutIframe;
     const fallback = this.elements.videoFallbackImg;
     const frame = this.elements.videoFrame;
 
-    const embedUrl = this.activeExercise.video_search_url || '';
-    
+    const embedUrl = (this.activeExercise.video_search_url || '').trim();
+
     if (embedUrl) {
-      // Build embed URL with autoplay, mute, loop, no controls chrome
-      // Extract video ID from embed URL for loop playlist param
+      // Extract video ID for loop param (loop requires playlist=videoId)
       const videoId = embedUrl.split('/embed/')[1]?.split('?')[0] || '';
       const params = new URLSearchParams({
-        autoplay: '1',
-        mute: '1',
-        loop: '1',
-        playlist: videoId,   // required for loop to work
-        controls: '0',
-        modestbranding: '1',
-        rel: '0',
-        showinfo: '0',
-        iv_load_policy: '3'
+        autoplay:        '1',
+        mute:            '1',
+        loop:            '1',
+        playlist:        videoId,
+        controls:        '0',
+        modestbranding:  '1',
+        rel:             '0',
+        iv_load_policy:  '3',
+        fs:              '0'
       });
-      const baseUrl = embedUrl.split('?')[0]; // strip any existing params
+      const baseUrl = embedUrl.split('?')[0];
       iframe.src = `${baseUrl}?${params.toString()}`;
       iframe.style.display = 'block';
+      fallback.style.display = 'none';
+      fallback.src = '';
       frame.classList.remove('use-fallback');
     } else {
-      // No YouTube URL — show thumbnail fallback
+      // No YouTube URL — show thumbnail or placeholder
       iframe.src = '';
       iframe.style.display = 'none';
-      fallback.src = this.activeExercise.thumbnail || '';
+      const thumb = (this.activeExercise.thumbnail || '').trim();
+      if (thumb) {
+        fallback.src = thumb;
+        fallback.style.display = 'block';
+        fallback.alt = this.activeExercise.exercise_name;
+      } else {
+        // No thumbnail either — show styled placeholder via CSS class
+        fallback.src = '';
+        fallback.style.display = 'none';
+      }
       frame.classList.add('use-fallback');
     }
   }

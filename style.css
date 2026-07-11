@@ -678,30 +678,60 @@ header {
   position: relative;
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
+/* YouTube iframe fills the frame */
+.video-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* Legacy: local video support */
 .video-frame video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
 .video-fallback-img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: none;
 }
 
-/* When video fails, show fallback */
+/* Fallback: show image, hide iframe/video */
+.video-frame.use-fallback iframe,
 .video-frame.use-fallback video {
   display: none;
 }
 .video-frame.use-fallback .video-fallback-img {
   display: block;
+}
+
+/* When no video AND no thumbnail: show placeholder text */
+.video-frame.use-fallback::after {
+  content: '📹 Geen video beschikbaar';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #555577;
+  font-size: clamp(0.75rem, 1.5vw, 1rem);
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+.video-frame.use-fallback:has(.video-fallback-img[src]:not([src=""])) ::after {
+  display: none; /* hide pseudo if real thumbnail loaded */
 }
 
 /* Floating overlay controls on video */
