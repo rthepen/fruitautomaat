@@ -198,98 +198,87 @@ header {
    SINGLE-SCREEN APP LAYOUT
    ========================================================================== */
 
-/* Main = vertical flex to fit persistent top-pinned slot machine */
+/* Main = two-column layout: Left (spinner + timer) | Right (video + info) */
 .app-main {
   flex: 1;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   position: relative;
   min-height: 0;
-  align-items: center;
-  justify-content: center;
+  width: 100%;
+  padding: 0 2rem 1rem 2rem;
+  gap: 2rem;
+  box-sizing: border-box;
 }
 
-/* Slot machine panel: always visible at the top */
+/* Left Main Column (approx 46% width) */
+.left-main-column {
+  width: 46%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* Right Main Column (occupies remaining width) */
+.right-main-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Slot machine panel inside left column */
 .slot-machine-panel {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  padding: 0.5rem 2rem;
   box-sizing: border-box;
-}
-
-.slot-machine-cabinet {
-  width: 100%;
-  max-width: 1400px;
-}
-
-/* Workout panel container: holds left (timer) and right (info/video) */
-.workout-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: row;
-  width: 100%;
-  min-height: 0;
-  box-sizing: border-box;
-}
-
-/* LEFT PANEL (Timer) */
-.left-panel {
-  width: clamp(260px, 35%, 450px);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 0.5rem 1rem;
-  position: relative;
-  min-height: 0;
-}
-
-/* RIGHT PANEL (Media & Instructions) */
-.right-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.5rem 2rem 0.5rem 0.5rem;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
 }
 
 /* ── State: IDLE ────────────────────── */
-.state-idle .workout-panel {
-  display: flex;
-  opacity: 0.3;
+.state-idle .right-main-column {
+  opacity: 0.2;
   pointer-events: none;
-  filter: grayscale(0.5);
+  filter: grayscale(0.6);
   transition: opacity 0.4s ease, filter 0.4s ease;
 }
-.state-idle .slot-machine-panel  { display: flex; }
+.state-idle .unified-timer-panel {
+  opacity: 0.2;
+  pointer-events: none;
+  filter: grayscale(0.6);
+  transition: opacity 0.4s ease, filter 0.4s ease;
+}
 .state-idle .trainer-bar         { display: none; }
 .state-idle .timer-svg           { opacity: 0; }
 .state-idle .unified-timer-label { display: block; }
 
 /* ── State: COUNTDOWN ───────────────── */
-.state-countdown .workout-panel       { display: flex; opacity: 1; filter: none; }
-.state-countdown .unified-timer-panel { display: flex; }
-.state-countdown .right-panel         { display: flex; }
+.state-countdown .right-main-column   { opacity: 1; filter: none; }
+.state-countdown .unified-timer-panel { opacity: 1; filter: none; }
 .state-countdown .trainer-bar         { display: none; }   /* no controls during countdown */
 .state-countdown .unified-timer-label { display: block; }
-/* Ring hidden during countdown (just big pulsing number) */
 .state-countdown .timer-svg           { opacity: 0; }
 
 /* ── State: ACTIVE ──────────────────── */
-.state-active .workout-panel       { display: flex; opacity: 1; filter: none; }
-.state-active .unified-timer-panel { display: flex; }
-.state-active .right-panel         { display: flex; }
-.state-active .trainer-bar         { display: flex; }
-.state-active .unified-timer-label { display: none; }
-.state-active .timer-svg           { opacity: 1; }
+.state-active .right-main-column    { opacity: 1; filter: none; }
+.state-active .unified-timer-panel  { opacity: 1; filter: none; }
+.state-active .trainer-bar          { display: flex; }
+.state-active .unified-timer-label  { display: none; }
+.state-active .timer-svg            { opacity: 1; }
+
 
 
 /* ── Unified timer panel ─────────────── */
@@ -315,8 +304,8 @@ header {
 
 .unified-timer-circle-wrap {
   position: relative;
-  width: clamp(160px, 28vh, 280px);
-  height: clamp(160px, 28vh, 280px);
+  width: clamp(180px, 36vh, 320px);
+  height: clamp(180px, 36vh, 320px);
   flex-shrink: 0;
 }
 
@@ -778,7 +767,7 @@ header {
 .video-slot {
   width: 100%;
   aspect-ratio: 16/9;
-  max-height: min(30vh, 280px);
+  max-height: min(52vh, 440px);
   flex-shrink: 1;
   min-height: 0;
   position: relative;

@@ -49,92 +49,89 @@
         </div>
       </div>
 
-      <!-- SLOT MACHINE (always visible, pinned at top, full width) -->
-      <div class="slot-machine-panel" id="slot-machine-panel">
-        <div class="slot-machine-cabinet border-pulse-pink">
-          <div class="reels-wrapper">
-            <div class="reel-viewport" id="reel-viewport-material">
-              <div class="reel-selection-frame"></div>
-              <div class="reel-strip" id="reel-material">
-                <div class="reel-card">---</div>
+      <!-- TWO COLUMN LAYOUT: Left (Spinner + Timer) | Right (Video + Instructions) -->
+      <div class="left-main-column">
+        <!-- SLOT MACHINE -->
+        <div class="slot-machine-panel" id="slot-machine-panel">
+          <div class="slot-machine-cabinet border-pulse-pink">
+            <div class="reels-wrapper">
+              <div class="reel-viewport" id="reel-viewport-material">
+                <div class="reel-selection-frame"></div>
+                <div class="reel-strip" id="reel-material">
+                  <div class="reel-card">---</div>
+                </div>
+              </div>
+              <div class="reel-viewport" id="reel-viewport-exercise">
+                <div class="reel-selection-frame"></div>
+                <div class="reel-strip" id="reel-exercise">
+                  <div class="reel-card">---</div>
+                </div>
+              </div>
+              <div class="reel-viewport" id="reel-viewport-time">
+                <div class="reel-selection-frame"></div>
+                <div class="reel-strip" id="reel-time">
+                  <div class="reel-card">---</div>
+                </div>
               </div>
             </div>
-            <div class="reel-viewport" id="reel-viewport-exercise">
-              <div class="reel-selection-frame"></div>
-              <div class="reel-strip" id="reel-exercise">
-                <div class="reel-card">---</div>
-              </div>
-            </div>
-            <div class="reel-viewport" id="reel-viewport-time">
-              <div class="reel-selection-frame"></div>
-              <div class="reel-strip" id="reel-time">
-                <div class="reel-card">---</div>
-              </div>
+            <div class="slot-controls">
+              <button id="spin-btn" class="spin-button">SPIN</button>
             </div>
           </div>
-          <div class="slot-controls">
-            <button id="spin-btn" class="spin-button">SPIN</button>
+        </div>
+
+        <!-- TIMER PANEL -->
+        <div class="unified-timer-panel" id="unified-timer-panel">
+          <!-- Label: "MAAK JE KLAAR" during countdown, hidden during active -->
+          <div class="unified-timer-label" id="unified-timer-label">MAAK JE KLAAR</div>
+          <!-- The big number — used for both countdown and workout timer -->
+          <div class="unified-timer-circle-wrap">
+            <svg class="timer-svg" viewBox="0 0 480 480">
+              <circle class="timer-track" cx="240" cy="240" r="220"></circle>
+              <circle id="timer-progress-circle" class="timer-progress" cx="240" cy="240" r="220"></circle>
+            </svg>
+            <div id="timer-digits" class="timer-digits">10</div>
           </div>
+          <!-- Trainer buttons (below timer) -->
+          <nav class="trainer-bar" id="trainer-bar" aria-label="Trainer bediening">
+            <button id="btn-pause" class="btn btn-cyan">
+              ⏸ <span style="margin-left:5px;">PAUZE</span>
+            </button>
+            <button id="btn-skip" class="btn btn-cyan">
+              ⏭ <span style="margin-left:5px;">AFRONDEN</span>
+            </button>
+            <button id="btn-reset" class="btn btn-pink">
+              🔄 <span style="margin-left:5px;">STOP</span>
+            </button>
+          </nav>
         </div>
       </div>
 
-      <!-- WORKOUT PANEL: holds the timer and exercise info side-by-side below the slot machine -->
-      <div class="workout-panel" id="workout-panel">
-
-        <div class="left-panel">
-          <!-- TIMER PANEL (visible in countdown + active) -->
-          <div class="unified-timer-panel" id="unified-timer-panel">
-            <!-- Label: "MAAK JE KLAAR" during countdown, hidden during active -->
-            <div class="unified-timer-label" id="unified-timer-label">MAAK JE KLAAR</div>
-            <!-- The big number — used for both countdown and workout timer -->
-            <div class="unified-timer-circle-wrap">
-              <svg class="timer-svg" viewBox="0 0 480 480">
-                <circle class="timer-track" cx="240" cy="240" r="220"></circle>
-                <circle id="timer-progress-circle" class="timer-progress" cx="240" cy="240" r="220"></circle>
-              </svg>
-              <div id="timer-digits" class="timer-digits">10</div>
-            </div>
-            <!-- Trainer buttons (below timer) -->
-            <nav class="trainer-bar" id="trainer-bar" aria-label="Trainer bediening">
-              <button id="btn-pause" class="btn btn-cyan">
-                ⏸ <span style="margin-left:5px;">PAUZE</span>
-              </button>
-              <button id="btn-skip" class="btn btn-cyan">
-                ⏭ <span style="margin-left:5px;">AFRONDEN</span>
-              </button>
-              <button id="btn-reset" class="btn btn-pink">
-                🔄 <span style="margin-left:5px;">STOP</span>
-              </button>
-            </nav>
-          </div>
+      <div class="right-main-column" id="right-panel">
+        <!-- Exercise name + material -->
+        <div class="exercise-header">
+          <h2 id="hud-exercise-name" class="hud-exercise-name">---</h2>
+          <div id="hud-material-info" class="hud-material-info">---</div>
         </div>
-
-        <div class="right-panel" id="right-panel">
-          <!-- Exercise name + material -->
-          <div class="exercise-header">
-            <h2 id="hud-exercise-name" class="hud-exercise-name">---</h2>
-            <div id="hud-material-info" class="hud-material-info">---</div>
-          </div>
-          <!-- Video slot -->
-          <div class="video-slot" id="video-slot">
-            <iframe
-              id="workout-video-iframe"
-              src=""
-              frameborder="0"
-              allow="autoplay; encrypted-media"
-              allowfullscreen
-              style="display:none;"
-            ></iframe>
-            <img id="video-fallback-img" class="video-fallback-img" src="" alt="" style="display:none;">
-          </div>
-          <!-- Instruction card -->
-          <div class="instruction-card">
-            <div class="instruction-title">Instructie</div>
-            <p id="instruction-text" class="instruction-text">---</p>
-          </div>
+        <!-- Video slot -->
+        <div class="video-slot" id="video-slot">
+          <iframe
+            id="workout-video-iframe"
+            src=""
+            frameborder="0"
+            allow="autoplay; encrypted-media"
+            allowfullscreen
+            style="display:none;"
+          ></iframe>
+          <img id="video-fallback-img" class="video-fallback-img" src="" alt="" style="display:none;">
         </div>
-
+        <!-- Instruction card -->
+        <div class="instruction-card">
+          <div class="instruction-title">Instructie</div>
+          <p id="instruction-text" class="instruction-text">---</p>
+        </div>
       </div>
+
 
 
     </main>
