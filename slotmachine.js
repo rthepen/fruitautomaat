@@ -100,12 +100,20 @@ class SlotReel {
   }
 
   /**
+   * Calculates the vertical translation baseline required to center a card exactly in the viewport
+   * @returns {number} Offset in pixels
+   */
+  getBaselineOffset() {
+    const viewportHeight = this.container.offsetHeight || 200;
+    return (viewportHeight - this.itemHeight) / 2;
+  }
+
+  /**
    * Resets position to index 0 (centered)
    */
   resetPosition() {
     this.updateItemHeight();
-    // Card 0 centered in the middle of the viewport (translates by +itemHeight)
-    this.offset = this.itemHeight;
+    this.offset = this.getBaselineOffset();
     this.updateTransform();
     this.lastTickIndex = 0;
   }
@@ -166,11 +174,8 @@ class SlotReel {
     // Calculate loop height
     const loopHeight = this.items.length * this.itemHeight;
 
-    // We want the reel to stop with the target item centered in the highlight frame.
-    // The highlighted center frame starts at y = itemHeight relative to the viewport.
-    // The target translation to align card 'originalIdx' in the middle is:
-    // -(originalIdx * itemHeight) + itemHeight.
-    const rawTargetOffset = -(originalIdx * this.itemHeight) + this.itemHeight;
+    // Center target card inside the viewport selection frame
+    const rawTargetOffset = -(originalIdx * this.itemHeight) + this.getBaselineOffset();
     
     const minDecelDistance = 2.0 * loopHeight; // scroll at least 2 full loops
     
@@ -236,8 +241,8 @@ class SlotReel {
         }
         if (originalIdx === -1) originalIdx = 0;
         
-        // Snap offset perfectly to target
-        this.offset = -(originalIdx * this.itemHeight) + this.itemHeight;
+        // Snap offset perfectly to target centered in viewport
+        this.offset = -(originalIdx * this.itemHeight) + this.getBaselineOffset();
         this.updateTransform();
         
         // Highlight active card
@@ -275,10 +280,8 @@ class SlotReel {
     const loopHeight = this.items.length * this.itemHeight;
     if (loopHeight === 0) return;
 
-    // The highlighted card is centered at viewport y = this.itemHeight.
-    // Its position on the strip is (-this.offset + this.itemHeight).
-    // We normalize this position to be within [0, loopHeight).
-    let targetPos = -this.offset + this.itemHeight;
+    // Center of highlight frame target position
+    let targetPos = -this.offset + this.getBaselineOffset();
     targetPos = ((targetPos % loopHeight) + loopHeight) % loopHeight;
     
     const activeIdx = Math.round(targetPos / this.itemHeight) % this.items.length;
