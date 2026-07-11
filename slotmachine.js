@@ -37,17 +37,8 @@ class SlotReel {
     this.onStopCallback = null;
   }
 
-  /**
-   * Measures the actual card height in the DOM to handle responsive scaling correctly.
-   */
   updateItemHeight() {
-    const card = this.strip.querySelector('.reel-card');
-    if (card && card.offsetHeight > 0) {
-      this.itemHeight = card.offsetHeight;
-    } else {
-      // Fallback matching CSS media query values
-      this.itemHeight = window.innerHeight <= 900 ? 100 : 120;
-    }
+    this.itemHeight = 80; // Hardcoded to match CSS exactly (height: 80px)
   }
 
   /**
@@ -99,13 +90,8 @@ class SlotReel {
     this.resetPosition();
   }
 
-  /**
-   * Calculates the vertical translation baseline required to center a card exactly in the viewport
-   * @returns {number} Offset in pixels
-   */
   getBaselineOffset() {
-    const viewportHeight = this.container.offsetHeight || 200;
-    return (viewportHeight - this.itemHeight) / 2;
+    return 40; // Hardcoded to match CSS exactly: (viewport height 160px - card height 80px) / 2 = 40px
   }
 
   /**
