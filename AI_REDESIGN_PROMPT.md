@@ -27,7 +27,7 @@ The entire app must fit on **one screen with no scrolling (desktop only, no mobi
 - Spans the **entire width of the screen** (100% width) and is **always visible in the exact same pinned position**.
 - Shows 3 spinning reels (equipment | exercise name | duration in seconds) inside a pink neon highlighted cabinet, with a giant "SPIN" button below the reels.
 - In idle state, it is centered vertically on the screen.
-- During countdown and active workout states, it stays pinned at the top of the screen to show the selected exercise as a reference.
+- **Vertical Collapse during Workout (IMPORTANT):** When the countdown starts, the cabinet collapses vertically to save space (reels viewport shrinks to 90px tall showing only the active middle card, padding decreases, and the SPIN button/controls are hidden). In JavaScript, reel translate offsets and heights must be recalculated/snapped (`realign()`) so the cards align perfectly inside the collapsed cabinet. This leaves plenty of vertical space for the workout area.
 
 **BOTTOM PORTION (Workout Panel):**
 - Hidden during idle state.
@@ -209,9 +209,9 @@ Manage app state via CSS class on `<main id="app-main">`:
 
 | Class | What's visible / styling |
 |---|---|
-| `.state-idle` | Slot machine + SPIN button; right panel hidden. **LEFT PANEL stretches to 100% width, slot-machine-cabinet max-width scales up to 1400px to fill the screen.** |
-| `.state-countdown` | Timer panel (pulsing number + "MAAK JE KLAAR" label); right panel visible; trainer buttons hidden. **LEFT PANEL shrinks back to ≈ 38% width.** |
-| `.state-active` | Timer panel (ring + number); right panel visible; trainer buttons visible. **LEFT PANEL is at ≈ 38% width.** |
+| `.state-idle` | Slot machine cabinet fully open, centered vertically, SPIN button visible; workout panel hidden. |
+| `.state-countdown` | Slot machine cabinet collapses vertically (SPIN button hidden, reels viewport 90px tall); workout panel visible (timer panel + right panel) and trainer controls hidden. |
+| `.state-active` | Slot machine cabinet remains collapsed vertically; workout panel visible and trainer controls visible. |
 
 Flash overlay (`#finished-overlay`) uses `.show` class, positioned `absolute` over everything with `z-index: 100`.
 
