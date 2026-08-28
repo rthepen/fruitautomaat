@@ -190,14 +190,14 @@
             <div class="input-group">
               <label for="no-repeat-exercises-input">Unieke oefeningen</label>
               <div class="toggle-row">
-                <input type="checkbox" id="no-repeat-exercises-input" class="toggle-checkbox">
+                <input type="checkbox" id="no-repeat-exercises-input" class="toggle-checkbox" checked>
                 <label for="no-repeat-exercises-input" class="toggle-label"></label>
               </div>
             </div>
             <div class="input-group">
               <label for="no-repeat-materials-input">Unieke materialen</label>
               <div class="toggle-row">
-                <input type="checkbox" id="no-repeat-materials-input" class="toggle-checkbox">
+                <input type="checkbox" id="no-repeat-materials-input" class="toggle-checkbox" checked>
                 <label for="no-repeat-materials-input" class="toggle-label"></label>
               </div>
             </div>
@@ -206,6 +206,18 @@
             * Werktijd wordt willekeurig geselecteerd, afgerond op 10 seconden.<br>
             * Met 'Unieke oefeningen/materialen' worden gekozen items uit de pool gehaald totdat ze allemaal geweest zijn (voorkomt herhaling).
           </p>
+        </section>
+        <section class="admin-section">
+          <div class="used-history-header">
+            <h3>Reeds geweest in deze ronde</h3>
+            <button id="reset-history-btn" class="btn btn-pink btn-tiny" title="Zet alle gebruikte oefeningen en materialen terug in de pool">
+              🔄 Reset lijst
+            </button>
+          </div>
+          <div class="used-history-stats" id="used-history-stats"></div>
+          <div class="used-history-list" id="used-history-list">
+            <!-- Populated dynamically via JS -->
+          </div>
         </section>
         <section class="admin-section" style="flex: 1; display: flex; flex-direction: column;">
           <h3>Materialen & Oefeningen</h3>

@@ -26,10 +26,11 @@ class WorkoutApp {
     this.classEndTime = ''; // 'HH:MM' string
     this.volume = 2.0;     // 0–3.0 (200% default)
     this.autoPlay = false;  // Auto-spin until class ends
-    this.noRepeatExercises = false; // Exhaust pool of exercises before repeating
-    this.noRepeatMaterials = false; // Exhaust pool of materials before repeating
+    this.noRepeatExercises = true; // Exhaust pool of exercises before repeating (default true)
+    this.noRepeatMaterials = true; // Exhaust pool of materials before repeating (default true)
     this.usedExerciseIds = new Set(); // Track used exercises in current cycle
     this.usedMaterials = new Set();   // Track used materials in current cycle
+    this.usedHistory = [];            // Chronological array of used exercises in current cycle
     
     // Active selection
     this.activeMaterial = null;
@@ -72,6 +73,7 @@ class WorkoutApp {
       await this.loadDatabase();
       this.buildAdminTree();
       this.updateReelsPool();
+      this.renderUsedHistory();
       this.showLoading(false);
       
       // Transition to Idle slot machine view
@@ -119,6 +121,9 @@ class WorkoutApp {
       autoplayStopBtn: document.getElementById('autoplay-stop-btn'),
       noRepeatExercisesInput: document.getElementById('no-repeat-exercises-input'),
       noRepeatMaterialsInput: document.getElementById('no-repeat-materials-input'),
+      usedHistoryList: document.getElementById('used-history-list'),
+      usedHistoryStats: document.getElementById('used-history-stats'),
+      resetHistoryBtn: document.getElementById('reset-history-btn'),
       databaseTree: document.getElementById('database-tree'),
       searchBar: document.getElementById('search-bar'),
       selectAllBtn: document.getElementById('select-all-btn'),
@@ -198,6 +203,11 @@ class WorkoutApp {
     // Sound effects toggle
     this.elements.audioToggleBtn.addEventListener('click', () => this.toggleUIAudio());
 
+    // Reset Pool History button
+    if (this.elements.resetHistoryBtn) {
+      this.elements.resetHistoryBtn.addEventListener('click', () => this.resetUsedHistory());
+    }
+
     // Active Workout Controls
     this.elements.btnPause.addEventListener('click', () => this.toggleWorkoutPause());
     this.elements.btnSkip.addEventListener('click', () => this.handleWorkoutSkip());
@@ -272,8 +282,8 @@ class WorkoutApp {
     this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
     this.autoPlay = this._getCookie('workout_autoplay') === 'true';
     this.requireVideo = this._getCookie('workout_require_video') !== 'false';
-    this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') === 'true';
-    this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') === 'true';
+    this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
+    this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
     
     this.elements.minTimeInput.value = this.minTime;
     this.elements.maxTimeInput.value = this.maxTime;
@@ -287,6 +297,18 @@ class WorkoutApp {
     }
     if (this.elements.noRepeatMaterialsInput) {
       this.elements.noRepeatMaterialsInput.checked = this.noRepeatMaterials;
+    }
+
+    // Load used pool history from localStorage
+    try {
+      const savedHistory = localStorage.getItem('workout_used_history');
+      if (savedHistory) {
+        this.usedHistory = JSON.parse(savedHistory) || [];
+        this.usedExerciseIds = new Set(this.usedHistory.map(h => h.id));
+        this.usedMaterials = new Set(this.usedHistory.map(h => h.material));
+      }
+    } catch (e) {
+      this.usedHistory = [];
     }
 
     // Disabled exercises
@@ -317,8 +339,8 @@ class WorkoutApp {
     let vol = parseInt(this.elements.volumeInput.value) || 200;
     let autoPlay = this.elements.autoplayInput.checked;
     let requireVideo = this.elements.requireVideoInput.checked;
-    let noRepeatExercises = this.elements.noRepeatExercisesInput ? this.elements.noRepeatExercisesInput.checked : false;
-    let noRepeatMaterials = this.elements.noRepeatMaterialsInput ? this.elements.noRepeatMaterialsInput.checked : false;
+    let noRepeatExercises = this.elements.noRepeatExercisesInput ? this.elements.noRepeatExercisesInput.checked : true;
+    let noRepeatMaterials = this.elements.noRepeatMaterialsInput ? this.elements.noRepeatMaterialsInput.checked : true;
 
     if (min < 10) min = 10;
     if (max < min) max = min;
@@ -354,6 +376,7 @@ class WorkoutApp {
     if (!this.noRepeatMaterials) {
       this.usedMaterials.clear();
     }
+    this._saveUsedHistory();
 
     // Apply volume to audio engine
     if (window.audioEngine) {
@@ -367,6 +390,68 @@ class WorkoutApp {
     this.startClassClock();
     // Update auto-play UI
     this.updateAutoPlayUI();
+    // Update used history UI
+    this.renderUsedHistory();
+  }
+
+  /**
+   * Save and render used pool items
+   */
+  _saveUsedHistory() {
+    try {
+      localStorage.setItem('workout_used_history', JSON.stringify(this.usedHistory));
+    } catch (e) {}
+  }
+
+  resetUsedHistory() {
+    this.usedExerciseIds.clear();
+    this.usedMaterials.clear();
+    this.usedHistory = [];
+    this._saveUsedHistory();
+    this.renderUsedHistory();
+  }
+
+  renderUsedHistory() {
+    if (!this.elements.usedHistoryList || !this.elements.usedHistoryStats) return;
+
+    // Calculate totals from current enabled pool
+    let totalExercises = 0;
+    let totalMaterials = 0;
+    for (const mat in this.database) {
+      const exs = this.database[mat].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !(ex.video_search_url || '').trim()) return false;
+        return true;
+      });
+      if (exs.length > 0) {
+        totalMaterials++;
+        totalExercises += exs.length;
+      }
+    }
+
+    // Render Stats Badges
+    this.elements.usedHistoryStats.innerHTML = `
+      <span class="used-history-badge">Oefeningen geweest: ${this.usedExerciseIds.size} / ${totalExercises}</span>
+      <span class="used-history-badge">Materialen geweest: ${this.usedMaterials.size} / ${totalMaterials}</span>
+    `;
+
+    // Render History List
+    if (this.usedHistory.length === 0) {
+      this.elements.usedHistoryList.innerHTML = `
+        <div class="used-history-empty">Nog geen oefeningen geweest in deze ronde (alles zit in de pool).</div>
+      `;
+    } else {
+      const itemsHtml = [...this.usedHistory].reverse().map((item, idx) => `
+        <div class="used-history-item">
+          <div class="used-history-item-left">
+            <span class="used-history-item-name">${item.name}</span>
+            <span class="used-history-item-material">${item.material}${item.timestamp ? ' • ' + item.timestamp : ''}</span>
+          </div>
+          <span class="used-history-item-time">${item.time}s</span>
+        </div>
+      `).join('');
+      this.elements.usedHistoryList.innerHTML = itemsHtml;
+    }
   }
 
   /**
@@ -783,6 +868,7 @@ class WorkoutApp {
         const allExercisesUsed = allEnabledExercises.every(ex => this.usedExerciseIds.has(ex.id));
         if (allExercisesUsed) {
           this.usedExerciseIds.clear();
+          this.usedHistory = [];
         }
         // Reset materials cycle when no unused materials with fresh exercises remain
         this.usedMaterials.clear();
@@ -795,6 +881,7 @@ class WorkoutApp {
         // Fallback if still empty
         if (candidateMaterials.length === 0) {
           this.usedExerciseIds.clear();
+          this.usedHistory = [];
           candidateMaterials = [...activeMaterials];
         }
       }
@@ -815,6 +902,7 @@ class WorkoutApp {
       let candidateExercises = allEnabledExercises.filter(ex => !this.usedExerciseIds.has(ex.id));
       if (candidateExercises.length === 0) {
         this.usedExerciseIds.clear();
+        this.usedHistory = [];
         candidateExercises = [...allEnabledExercises];
       }
 
@@ -860,6 +948,16 @@ class WorkoutApp {
     this.activeMaterial = chosenMaterial;
     this.activeExercise = chosenExercise;
     this.activeTime = chosenTime;
+
+    // Record used history
+    this.usedHistory.push({
+      id: chosenExercise.id,
+      name: chosenExercise.exercise_name,
+      material: chosenMaterial,
+      time: chosenTime,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+    this._saveUsedHistory();
 
     // Update UI status
     this.elements.spinBtn.disabled = true;
@@ -1155,6 +1253,9 @@ class WorkoutApp {
       if (this.elements.noRepeatMaterialsInput) {
         this.elements.noRepeatMaterialsInput.checked = this.noRepeatMaterials;
       }
+      
+      // Render used history list & stats
+      this.renderUsedHistory();
       
       this.elements.adminOverlay.classList.add('open');
       this.elements.scrim.classList.add('open');

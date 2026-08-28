@@ -1296,6 +1296,102 @@ header {
   background: #fff;
 }
 
+/* Used Items / Pool History Section */
+.used-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding-bottom: 0.4rem;
+}
+
+.used-history-header h3 {
+  border-bottom: none !important;
+  padding-bottom: 0 !important;
+  margin: 0 !important;
+}
+
+.btn-tiny {
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.75rem !important;
+  border-radius: 6px !important;
+  gap: 0.3rem !important;
+  cursor: pointer;
+}
+
+.used-history-stats {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.used-history-badge {
+  background: rgba(0, 255, 255, 0.08);
+  border: 1px solid rgba(0, 255, 255, 0.25);
+  border-radius: 6px;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.75rem;
+  font-family: var(--font-digital);
+  color: var(--neon-cyan);
+  letter-spacing: 0.5px;
+}
+
+.used-history-list {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid #222233;
+  border-radius: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.used-history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  font-size: 0.82rem;
+  border-left: 3px solid var(--neon-pink);
+}
+
+.used-history-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.used-history-item-name {
+  color: #fff;
+  font-weight: 600;
+}
+
+.used-history-item-material {
+  color: #8888aa;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.used-history-item-time {
+  font-family: var(--font-digital);
+  color: var(--neon-yellow);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.used-history-empty {
+  color: #777799;
+  font-size: 0.8rem;
+  padding: 0.8rem;
+  text-align: center;
+  font-style: italic;
+}
+
 /* Database Selector lists */
 .selector-list-header {
   display: flex;
