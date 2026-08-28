@@ -17,20 +17,16 @@
   <div class="app-container">
     <!-- Header -->
     <header>
-      <h1 class="logo" id="main-title">Workout <span>Slots</span></h1>
+      <h1 class="logo" id="main-title" title="Tik 3x voor geheime lesplanner">Workout <span>Slots</span></h1>
 
-      <!-- Live clock + class end countdown -->
+      <!-- Live clock + class schedule countdown -->
       <div class="header-clock">
         <div class="header-clock-time" id="header-current-time">--:--</div>
-        <div class="header-clock-end" id="header-class-end">LES EINDIGT: --:--</div>
+        <div class="header-clock-end" id="header-class-end">LES START: --:--</div>
         <div class="header-clock-remaining" id="header-remaining"></div>
       </div>
       
       <div class="header-controls">
-        <!-- Auto-play indicator/stop button -->
-        <button id="autoplay-stop-btn" class="btn btn-pink" aria-label="Stop auto-play" title="Stop automatisch draaien" style="display:none;">
-          ⏹ AUTO
-        </button>
         <!-- Sound FX toggle button -->
         <button id="audio-toggle-btn" class="btn btn-cyan btn-icon" aria-label="Toggle geluidseffecten" title="Geluidseffecten aan/uit">
           <span class="btn-icon-symbol">🔊</span>
@@ -188,6 +184,14 @@
           <h3>Timer &amp; Les instellingen</h3>
           <div class="settings-grid">
             <div class="input-group">
+              <label for="class-start-input">Les start om</label>
+              <input type="time" id="class-start-input" value="">
+            </div>
+            <div class="input-group">
+              <label for="class-end-input">Les eindigt om</label>
+              <input type="time" id="class-end-input" value="">
+            </div>
+            <div class="input-group">
               <label for="min-time-input">Min. werktijd (sec)</label>
               <input type="number" id="min-time-input" min="10" step="10" value="30">
             </div>
@@ -198,10 +202,6 @@
             <div class="input-group">
               <label for="countdown-time-input">Maak je klaar (sec)</label>
               <input type="number" id="countdown-time-input" min="1" max="60" step="1" value="10">
-            </div>
-            <div class="input-group">
-              <label for="class-end-input">Les eindigt om</label>
-              <input type="time" id="class-end-input" value="">
             </div>
             <div class="input-group">
               <label for="volume-input">Volume (%)</label>
@@ -245,15 +245,16 @@
             </div>
           </div>
           <p style="font-size: 0.75rem; color: #8888aa; margin-top: 0.4rem; line-height: 1.4;">
-            * Werktijd wordt willekeurig geselecteerd, afgerond op 10 seconden.<br>
-            * Met 'Unieke oefeningen/materialen' worden gekozen items uit de pool gehaald totdat ze allemaal geweest zijn (voorkomt herhaling).
+            * Auto-play staat standaard aan (draait automatisch door tot de les eindigt).<br>
+            * Stel een starttijd in om automatisch op die tijd te starten, of druk op SPIN om direct te beginnen.
           </p>
         </section>
+
         <section class="admin-section">
           <div class="used-history-header">
             <h3>Reeds geweest in deze ronde</h3>
             <button id="reset-history-btn" class="btn btn-pink btn-tiny" title="Zet alle gebruikte oefeningen en materialen terug in de pool">
-              🔄 Reset lijst
+              🔄 Reset ronde
             </button>
           </div>
           <div class="used-history-stats" id="used-history-stats"></div>
@@ -261,33 +262,18 @@
             <!-- Populated dynamically via JS -->
           </div>
         </section>
+
         <section class="admin-section">
           <div class="used-history-header">
-            <h3>Niet-werkende video's</h3>
-            <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
-              <button id="scan-videos-btn" class="btn btn-cyan btn-tiny" title="Scan alle video's in de database op geldigheid">
-                🔍 Scan video's
-              </button>
-              <button id="sync-sheets-btn" class="btn btn-cyan btn-tiny" title="Stuur lijst met niet-werkende video's naar Google Sheets">
-                📊 Naar Google Sheet
-              </button>
-              <button id="download-csv-btn" class="btn btn-cyan btn-tiny" title="Download lijst als CSV bestand">
-                📥 CSV
-              </button>
-              <button id="reset-broken-videos-btn" class="btn btn-pink btn-tiny" title="Wis lijst met niet-werkende video's">
-                🔄 Reset lijst
-              </button>
-            </div>
+            <h3>Video Kwaliteitscontrole</h3>
           </div>
-          <div class="input-group" style="margin-top: 0.6rem;">
-            <label for="google-sheets-url-input">Google Sheets Webhook URL</label>
-            <input type="text" id="google-sheets-url-input" placeholder="https://script.google.com/macros/s/.../exec" value="">
-          </div>
-          <div class="used-history-stats" id="broken-videos-stats"></div>
-          <div class="used-history-list" id="broken-videos-list">
-            <!-- Populated dynamically via JS -->
+          <div class="used-history-stats" id="broken-videos-stats">
+            <span class="used-history-badge" style="background:rgba(57,255,20,0.1); border-color:rgba(57,255,20,0.3); color:#39ff14;">
+              ✓ Automatische achtergrondcontrole actief (defecte video's worden automatisch uitgesloten)
+            </span>
           </div>
         </section>
+
         <section class="admin-section" style="flex: 1; display: flex; flex-direction: column;">
           <h3>Materialen & Oefeningen</h3>
           
@@ -305,12 +291,69 @@
         </section>
       </div>
 
-      <div class="admin-footer">
-        <button id="admin-save-btn" class="btn btn-cyan" style="width: 100%; justify-content: center;">
-          OPSLAAN & SLUITEN
+      <div class="admin-footer" style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem;">
+        <button id="secret-planner-open-btn" class="btn btn-tiny" style="background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#aaa;" title="Open geheime lesplanner">
+          🔒 Geheime Planner
+        </button>
+        <button id="admin-save-btn" class="btn btn-cyan" style="flex:1; justify-content: center;">
+          OPSLAAN &amp; SLUITEN
         </button>
       </div>
     </aside>
+
+    <!-- SECRET TRAINER PLANNER MODAL / DRAWER -->
+    <div id="secret-planner-overlay" class="secret-planner-overlay" aria-hidden="true">
+      <div class="secret-planner-card">
+        <div class="secret-planner-header">
+          <div>
+            <div class="secret-planner-badge">🤫 GEHEIM TRAINERSMENU</div>
+            <h2 class="secret-planner-title">Volledig Trainingsschema</h2>
+            <p class="secret-planner-subtitle">Bekijk, verplaats of verwijder oefeningen in het vooraf gegenereerde lesschema.</p>
+          </div>
+          <button id="secret-planner-close-btn" class="btn btn-cyan btn-icon" title="Sluiten">✕</button>
+        </div>
+
+        <div class="secret-planner-stats" id="secret-planner-stats">
+          <!-- Populated dynamically via JS -->
+        </div>
+
+        <div class="secret-planner-toolbar">
+          <button id="secret-regenerate-btn" class="btn btn-cyan btn-small">
+            🎲 Nieuw Schema Genereren
+          </button>
+          <button id="secret-add-exercise-btn" class="btn btn-pink btn-small">
+            ➕ Oefening Toevoegen
+          </button>
+        </div>
+
+        <div class="secret-schedule-list" id="secret-schedule-list">
+          <!-- Populated dynamically via JS -->
+        </div>
+
+        <!-- Hidden Developer & Data Tools inside Secret Menu -->
+        <div class="secret-dev-tools">
+          <div class="secret-dev-title">⚙️ Ontwikkelaar &amp; Google Sheet Tools</div>
+          <div class="secret-dev-buttons">
+            <button id="scan-videos-btn" class="btn btn-cyan btn-tiny" title="Scan alle video's in de database">
+              🔍 Scan alle video's
+            </button>
+            <button id="sync-sheets-btn" class="btn btn-cyan btn-tiny" title="Stuur niet-werkende video's naar Google Sheet">
+              📊 Naar Google Sheet
+            </button>
+            <button id="download-csv-btn" class="btn btn-cyan btn-tiny" title="Download CSV">
+              📥 Download CSV
+            </button>
+            <button id="reset-broken-videos-btn" class="btn btn-pink btn-tiny" title="Reset defecte video lijst">
+              🔄 Reset video lijst
+            </button>
+          </div>
+          <div style="margin-top:0.4rem;">
+            <input type="text" id="google-sheets-url-input" class="search-bar" style="font-size:0.75rem; padding:0.4rem 0.6rem;" placeholder="Google Sheets Webhook URL" value="">
+          </div>
+          <div id="broken-videos-list" style="display:none;"></div>
+        </div>
+      </div>
+    </div>
 
   </div>
 

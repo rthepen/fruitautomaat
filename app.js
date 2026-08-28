@@ -23,9 +23,10 @@ class WorkoutApp {
     this.minTime = 30;
     this.maxTime = 120;
     this.countdownTime = 10; // Get ready countdown time (customizable)
-    this.classEndTime = ''; // 'HH:MM' string
-    this.volume = 2.0;     // 0–3.0 (200% default)
-    this.autoPlay = false;  // Auto-spin until class ends
+    this.classStartTime = ''; // 'HH:MM' string (optional auto-start time)
+    this.classEndTime = '';   // 'HH:MM' string (class finish time)
+    this.volume = 2.0;       // 0–3.0 (200% default)
+    this.autoPlay = true;    // Auto-spin is always active by default
     this.coach = 'tabataman'; // 'tabataman', 'eva', 'arcade'
     this.noRepeatExercises = true; // Exhaust pool of exercises before repeating (default true)
     this.noRepeatMaterials = true; // Exhaust pool of materials before repeating (default true)
@@ -33,6 +34,15 @@ class WorkoutApp {
     this.usedMaterials = new Set();   // Track used materials in current cycle
     this.usedHistory = [];            // Chronological array of used exercises in current cycle
     
+    // Pre-Planned Schedule
+    this.plannedSchedule = [];        // Pre-generated workout sequence: [{ id, exercise, material, time, status }]
+    this.currentScheduleIndex = 0;    // Index of the next exercise to spin
+    this._isSessionActive = false;    // Whether class is actively running
+
+    // Secret Planner state
+    this._logoClicks = 0;
+    this._logoClickTimer = null;
+
     // Broken video tracking & Google Sheets logging
     this.brokenVideoExerciseIds = new Set(); // Track exercises with refused/deleted/broken YouTube videos
     this.videoValidationCache = {};          // Cache videoId -> boolean validation results
@@ -83,6 +93,10 @@ class WorkoutApp {
       this.updateReelsPool();
       this.renderUsedHistory();
       this.renderBrokenVideosList();
+      
+      // Pre-generate the full planned workout schedule in the background
+      await this.generatePlannedSchedule();
+      
       this.showLoading(false);
       
       // Transition to Idle slot machine view
@@ -115,7 +129,8 @@ class WorkoutApp {
       reel2: document.getElementById('reel-viewport-exercise'),
       reel3: document.getElementById('reel-viewport-time'),
       
-      // Buttons
+      // Buttons & Titles
+      mainTitle: document.getElementById('main-title'),
       spinBtn: document.getElementById('spin-btn'),
       adminOpenBtn: document.getElementById('admin-open-btn'),
       adminCloseBtn: document.getElementById('admin-close-btn'),
@@ -125,20 +140,34 @@ class WorkoutApp {
       // Admin Panel
       adminOverlay: document.getElementById('admin-overlay'),
       scrim: document.getElementById('scrim'),
+      classStartInput: document.getElementById('class-start-input'),
+      classEndInput: document.getElementById('class-end-input'),
       minTimeInput: document.getElementById('min-time-input'),
       maxTimeInput: document.getElementById('max-time-input'),
       countdownTimeInput: document.getElementById('countdown-time-input'),
-      classEndInput: document.getElementById('class-end-input'),
       volumeInput: document.getElementById('volume-input'),
       coachSelect: document.getElementById('coach-select'),
       requireVideoInput: document.getElementById('require-video-input'),
-      autoplayInput: document.getElementById('autoplay-input'),
-      autoplayStopBtn: document.getElementById('autoplay-stop-btn'),
       noRepeatExercisesInput: document.getElementById('no-repeat-exercises-input'),
       noRepeatMaterialsInput: document.getElementById('no-repeat-materials-input'),
       usedHistoryList: document.getElementById('used-history-list'),
       usedHistoryStats: document.getElementById('used-history-stats'),
       resetHistoryBtn: document.getElementById('reset-history-btn'),
+      databaseTree: document.getElementById('database-tree'),
+      searchBar: document.getElementById('search-bar'),
+      selectAllBtn: document.getElementById('select-all-btn'),
+      deselectAllBtn: document.getElementById('deselect-all-btn'),
+
+      // Secret Planner Modal
+      secretPlannerOverlay: document.getElementById('secret-planner-overlay'),
+      secretPlannerOpenBtn: document.getElementById('secret-planner-open-btn'),
+      secretPlannerCloseBtn: document.getElementById('secret-planner-close-btn'),
+      secretPlannerStats: document.getElementById('secret-planner-stats'),
+      secretScheduleList: document.getElementById('secret-schedule-list'),
+      secretRegenerateBtn: document.getElementById('secret-regenerate-btn'),
+      secretAddExerciseBtn: document.getElementById('secret-add-exercise-btn'),
+
+      // Developer Tools inside Secret Menu
       scanVideosBtn: document.getElementById('scan-videos-btn'),
       syncSheetsBtn: document.getElementById('sync-sheets-btn'),
       downloadCsvBtn: document.getElementById('download-csv-btn'),
@@ -146,10 +175,6 @@ class WorkoutApp {
       googleSheetsUrlInput: document.getElementById('google-sheets-url-input'),
       brokenVideosStats: document.getElementById('broken-videos-stats'),
       brokenVideosList: document.getElementById('broken-videos-list'),
-      databaseTree: document.getElementById('database-tree'),
-      searchBar: document.getElementById('search-bar'),
-      selectAllBtn: document.getElementById('select-all-btn'),
-      deselectAllBtn: document.getElementById('deselect-all-btn'),
       
       // Header clock elements
       headerCurrentTime: document.getElementById('header-current-time'),
@@ -207,7 +232,10 @@ class WorkoutApp {
     // Admin Toggle
     this.elements.adminOpenBtn.addEventListener('click', () => this.openAdmin(true));
     this.elements.adminCloseBtn.addEventListener('click', () => this.openAdmin(false));
-    this.elements.scrim.addEventListener('click', () => this.openAdmin(false));
+    this.elements.scrim.addEventListener('click', () => {
+      this.openAdmin(false);
+      this.openSecretPlanner(false);
+    });
     
     // Admin Search
     this.elements.searchBar.addEventListener('input', (e) => this.filterAdminTree(e.target.value));
@@ -221,14 +249,8 @@ class WorkoutApp {
       this.disabledExerciseIds = new Set(this.tempDisabledExerciseIds);
       this.saveSettings();
       this.updateReelsPool();
+      this.generatePlannedSchedule(true);
       this.openAdmin(false);
-    });
-
-    // Auto-play stop button
-    this.elements.autoplayStopBtn.addEventListener('click', () => {
-      this.autoPlay = false;
-      this._setCookie('workout_autoplay', false);
-      this.updateAutoPlayUI();
     });
 
     // Video requirement toggle
@@ -246,7 +268,44 @@ class WorkoutApp {
       this.elements.resetHistoryBtn.addEventListener('click', () => this.resetUsedHistory());
     }
 
-    // Video check, sheets sync, and reset buttons
+    // Secret Planner Controls
+    if (this.elements.secretPlannerOpenBtn) {
+      this.elements.secretPlannerOpenBtn.addEventListener('click', () => this.openSecretPlanner(true));
+    }
+    if (this.elements.secretPlannerCloseBtn) {
+      this.elements.secretPlannerCloseBtn.addEventListener('click', () => this.openSecretPlanner(false));
+    }
+    if (this.elements.secretRegenerateBtn) {
+      this.elements.secretRegenerateBtn.addEventListener('click', () => this.generatePlannedSchedule(true));
+    }
+    if (this.elements.secretAddExerciseBtn) {
+      this.elements.secretAddExerciseBtn.addEventListener('click', () => this.addExerciseToSchedule());
+    }
+
+    // Secret trigger: Triple click/tap on logo
+    if (this.elements.mainTitle) {
+      this.elements.mainTitle.addEventListener('click', () => {
+        this._logoClicks++;
+        clearTimeout(this._logoClickTimer);
+        this._logoClickTimer = setTimeout(() => {
+          this._logoClicks = 0;
+        }, 1200);
+
+        if (this._logoClicks >= 3) {
+          this._logoClicks = 0;
+          this.openSecretPlanner(true);
+        }
+      });
+    }
+
+    // Secret shortcut: Press 'P' or 'S'
+    document.addEventListener('keydown', (e) => {
+      if ((e.key === 'p' || e.key === 'P' || e.key === 's' || e.key === 'S') && e.target.tagName !== 'INPUT') {
+        this.openSecretPlanner(true);
+      }
+    });
+
+    // Video check, sheets sync, and reset buttons (inside secret menu)
     if (this.elements.scanVideosBtn) {
       this.elements.scanVideosBtn.addEventListener('click', () => this.scanAllVideos());
     }
@@ -330,23 +389,26 @@ class WorkoutApp {
     this.minTime = parseInt(this._getCookie('workout_min_time')) || 30;
     this.maxTime = parseInt(this._getCookie('workout_max_time')) || 120;
     this.countdownTime = parseInt(this._getCookie('workout_countdown_time')) || 10;
+    this.classStartTime = this._getCookie('workout_class_start') || '';
     this.classEndTime = this._getCookie('workout_class_end') || '';
     this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
-    this.autoPlay = this._getCookie('workout_autoplay') === 'true';
+    this.autoPlay = true; // Auto-play is always on
     this.coach = this._getCookie('workout_coach') || 'tabataman';
     this.requireVideo = this._getCookie('workout_require_video') !== 'false';
     this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
     this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
     
+    if (this.elements.classStartInput) {
+      this.elements.classStartInput.value = this.classStartTime;
+    }
+    this.elements.classEndInput.value = this.classEndTime;
     this.elements.minTimeInput.value = this.minTime;
     this.elements.maxTimeInput.value = this.maxTime;
     this.elements.countdownTimeInput.value = this.countdownTime;
-    this.elements.classEndInput.value = this.classEndTime;
     this.elements.volumeInput.value = Math.round(this.volume * 100);
     if (this.elements.coachSelect) {
       this.elements.coachSelect.value = this.coach;
     }
-    this.elements.autoplayInput.checked = this.autoPlay;
     this.elements.requireVideoInput.checked = this.requireVideo;
     if (this.elements.noRepeatExercisesInput) {
       this.elements.noRepeatExercisesInput.checked = this.noRepeatExercises;
@@ -403,17 +465,15 @@ class WorkoutApp {
     this.updateAudioButtonUI();
     // Start the live header clock
     this.startClassClock();
-    // Update auto-play button visibility
-    this.updateAutoPlayUI();
   }
 
   saveSettings() {
     let min = parseInt(this.elements.minTimeInput.value) || 30;
     let max = parseInt(this.elements.maxTimeInput.value) || 120;
     let countdown = parseInt(this.elements.countdownTimeInput.value) || 10;
+    let classStart = this.elements.classStartInput ? this.elements.classStartInput.value : '';
     let classEnd = this.elements.classEndInput.value || '';
     let vol = parseInt(this.elements.volumeInput.value) || 200;
-    let autoPlay = this.elements.autoplayInput.checked;
     let coach = this.elements.coachSelect ? this.elements.coachSelect.value : 'tabataman';
     let requireVideo = this.elements.requireVideoInput.checked;
     let noRepeatExercises = this.elements.noRepeatExercisesInput ? this.elements.noRepeatExercisesInput.checked : true;
@@ -429,9 +489,9 @@ class WorkoutApp {
     this.minTime = min;
     this.maxTime = max;
     this.countdownTime = countdown;
+    this.classStartTime = classStart;
     this.classEndTime = classEnd;
     this.volume = vol / 100;
-    this.autoPlay = autoPlay;
     this.coach = coach;
     this.requireVideo = requireVideo;
     this.noRepeatExercises = noRepeatExercises;
@@ -440,12 +500,13 @@ class WorkoutApp {
     this._setCookie('workout_min_time', this.minTime);
     this._setCookie('workout_max_time', this.maxTime);
     this._setCookie('workout_countdown_time', this.countdownTime);
+    this._setCookie('workout_class_start', this.classStartTime);
     this._setCookie('workout_class_end', this.classEndTime);
     this._setCookie('workout_volume', this.volume);
-    this._setCookie('workout_autoplay', this.autoPlay);
     this._setCookie('workout_coach', this.coach);
     this._setCookie('workout_require_video', this.requireVideo);
     this._setCookie('workout_no_repeat_exercises', this.noRepeatExercises);
+    this._setCookie('workout_no_repeat_materials', this.noRepeatMaterials);
     let gUrl = this.elements.googleSheetsUrlInput ? this.elements.googleSheetsUrlInput.value.trim() : this.googleSheetsUrl;
     this.googleSheetsUrl = gUrl;
     this._setCookie('workout_google_sheets_url', this.googleSheetsUrl);
@@ -476,8 +537,6 @@ class WorkoutApp {
 
     // Update clock with new end time
     this.startClassClock();
-    // Update auto-play UI
-    this.updateAutoPlayUI();
     // Update used history UI
     this.renderUsedHistory();
   }
@@ -985,7 +1044,7 @@ class WorkoutApp {
   }
 
   /**
-   * Starts the live header clock and class-end countdown ticker
+   * Starts the live header clock and schedule countdown ticker
    */
   startClassClock() {
     if (this._clockInterval) clearInterval(this._clockInterval);
@@ -998,6 +1057,34 @@ class WorkoutApp {
         this.elements.headerCurrentTime.textContent = `${hh}:${mm}:${ss}`;
       }
       
+      // Auto-start check when start time is configured and session hasn't started yet
+      if (this.classStartTime && !this._isSessionActive) {
+        const [startH, startM] = this.classStartTime.split(':').map(Number);
+        const startDate = new Date(now);
+        startDate.setHours(startH, startM, 0, 0);
+
+        if (now >= startDate) {
+          // Scheduled start time reached: start session automatically!
+          this._isSessionActive = true;
+          this.handleSpin();
+        } else {
+          // Waiting for start time: render countdown in header
+          if (this.elements.headerClassEnd) {
+            this.elements.headerClassEnd.textContent = `LES START: ${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`;
+            this.elements.headerClassEnd.style.display = '';
+          }
+          if (this.elements.headerRemaining) {
+            const diffSec = Math.max(0, Math.floor((startDate - now) / 1000));
+            const rm = Math.floor(diffSec / 60);
+            const rs = diffSec % 60;
+            this.elements.headerRemaining.textContent = `START OVER ${rm}m ${String(rs).padStart(2, '0')}s`;
+            this.elements.headerRemaining.className = 'header-clock-remaining';
+          }
+          return;
+        }
+      }
+
+      // Live end time ticker when active
       if (this.classEndTime && this.elements.headerClassEnd) {
         const [endH, endM] = this.classEndTime.split(':').map(Number);
         this.elements.headerClassEnd.textContent = `LES EINDIGT: ${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`;
@@ -1033,6 +1120,289 @@ class WorkoutApp {
     };
     tick();
     this._clockInterval = setInterval(tick, 1000);
+  }
+
+  /**
+   * =========================================================================
+   * PRE-PLANNED WORKOUT SCHEDULE & SECRET PLANNER ENGINE
+   * =========================================================================
+   */
+
+  /**
+   * Generates a complete workout sequence in advance and pre-tests all videos
+   */
+  async generatePlannedSchedule(forceNew = false) {
+    if (!forceNew && this.plannedSchedule.length > 0) return;
+
+    const activeMaterials = [];
+    const activeExercisesMap = {};
+    const allEnabled = [];
+
+    for (const mat in this.database) {
+      const exs = this.database[mat].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
+        return true;
+      });
+      if (exs.length > 0) {
+        activeMaterials.push(mat);
+        activeExercisesMap[mat] = exs;
+        allEnabled.push(...exs);
+      }
+    }
+
+    if (activeMaterials.length === 0 || allEnabled.length === 0) {
+      this.plannedSchedule = [];
+      this.renderSecretSchedule();
+      return;
+    }
+
+    // Determine target duration in seconds
+    let totalSessionSeconds = 2700; // 45 min default
+    if (this.classStartTime && this.classEndTime) {
+      const [sH, sM] = this.classStartTime.split(':').map(Number);
+      const [eH, eM] = this.classEndTime.split(':').map(Number);
+      const startMin = sH * 60 + sM;
+      let endMin = eH * 60 + eM;
+      if (endMin < startMin) endMin += 24 * 60;
+      totalSessionSeconds = Math.max(300, (endMin - startMin) * 60);
+    } else if (this.classEndTime) {
+      const now = new Date();
+      const [eH, eM] = this.classEndTime.split(':').map(Number);
+      const endMin = eH * 60 + eM;
+      const nowMin = now.getHours() * 60 + now.getMinutes();
+      let diff = (endMin - nowMin) * 60;
+      if (diff > 300) totalSessionSeconds = diff;
+    }
+
+    const minStep = Math.ceil(this.minTime / 10) * 10;
+    const maxStep = Math.floor(this.maxTime / 10) * 10;
+    const avgSec = (minStep + maxStep) / 2 + this.countdownTime + 3;
+    const countNeeded = Math.max(6, Math.ceil(totalSessionSeconds / avgSec));
+
+    const newSchedule = [];
+    const usedMatSet = new Set();
+    const usedExIdSet = new Set();
+    let accumSeconds = 0;
+
+    for (let i = 0; i < countNeeded; i++) {
+      let candidateMaterials = activeMaterials.filter(m => !usedMatSet.has(m) && activeExercisesMap[m].some(e => !usedExIdSet.has(e.id)));
+      if (candidateMaterials.length === 0) {
+        usedMatSet.clear();
+        candidateMaterials = activeMaterials.filter(m => activeExercisesMap[m].some(e => !usedExIdSet.has(e.id)));
+        if (candidateMaterials.length === 0) {
+          usedExIdSet.clear();
+          candidateMaterials = [...activeMaterials];
+        }
+      }
+
+      const mat = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
+      let candidateExs = activeExercisesMap[mat].filter(e => !usedExIdSet.has(e.id));
+      if (candidateExs.length === 0) candidateExs = activeExercisesMap[mat];
+
+      let ex = candidateExs[Math.floor(Math.random() * candidateExs.length)];
+
+      const timeChoices = [];
+      for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
+      const chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
+
+      // Pre-validate video
+      const vId = this._extractYouTubeId(ex.video_search_url);
+      let isValid = true;
+      if (vId) {
+        isValid = await this.validateYouTubeVideo(vId);
+        if (!isValid) {
+          this.brokenVideoExerciseIds.add(ex.id);
+          this.logBrokenVideoToGoogleSheet(ex, 'Pre-scan defect gevonden');
+          const alt = allEnabled.find(a => a.id !== ex.id && this._hasValidWorkingVideo(a));
+          if (alt) {
+            ex = alt;
+            isValid = true;
+          }
+        }
+      }
+
+      usedMatSet.add(mat);
+      usedExIdSet.add(ex.id);
+      accumSeconds += (this.countdownTime + chosenTime + 3);
+
+      newSchedule.push({
+        id: ex.id,
+        exercise: ex,
+        material: mat,
+        time: chosenTime,
+        status: 'pending',
+        videoValid: isValid
+      });
+
+      if (accumSeconds >= totalSessionSeconds) break;
+    }
+
+    this.plannedSchedule = newSchedule;
+    this.currentScheduleIndex = 0;
+    this.renderSecretSchedule();
+  }
+
+  /**
+   * Open / close the secret planner drawer
+   */
+  openSecretPlanner(isOpen) {
+    if (!this.elements.secretPlannerOverlay) return;
+    if (isOpen) {
+      this.renderSecretSchedule();
+      this.elements.secretPlannerOverlay.classList.add('open');
+      this.elements.secretPlannerOverlay.setAttribute('aria-hidden', 'false');
+    } else {
+      this.elements.secretPlannerOverlay.classList.remove('open');
+      this.elements.secretPlannerOverlay.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  /**
+   * Render the Secret Schedule UI list
+   */
+  renderSecretSchedule() {
+    if (!this.elements.secretScheduleList || !this.elements.secretPlannerStats) return;
+
+    const totalCount = this.plannedSchedule.length;
+    const totalSecs = this.plannedSchedule.reduce((acc, item) => acc + item.time, 0);
+    const mins = Math.round(totalSecs / 60);
+
+    this.elements.secretPlannerStats.innerHTML = `
+      <span class="used-history-badge">📋 ${totalCount} Geplande oefeningen</span>
+      <span class="used-history-badge">⏱ ~${mins} min totale werktijd</span>
+      <span class="used-history-badge" style="color:#39ff14;">✓ Alle video's vooraf gecontroleerd</span>
+    `;
+
+    if (totalCount === 0) {
+      this.elements.secretScheduleList.innerHTML = `
+        <div class="used-history-empty">Geen oefeningen in schema. Klik op 'Nieuw Schema Genereren'.</div>
+      `;
+      return;
+    }
+
+    const html = this.plannedSchedule.map((item, index) => {
+      const isPast = index < this.currentScheduleIndex;
+      const isCurrent = index === this.currentScheduleIndex;
+      const statusClass = isCurrent ? 'item-active' : (isPast ? 'item-done' : '');
+
+      return `
+        <div class="secret-schedule-item ${statusClass}">
+          <div class="secret-item-left">
+            <div class="secret-item-index">${index + 1}</div>
+            <div class="secret-item-info">
+              <div class="secret-item-name">${item.exercise.exercise_name}</div>
+              <div class="secret-item-meta">
+                <span>📦 ${item.material}</span>
+                <span class="secret-item-time-badge">${item.time}s</span>
+                <span style="color:#39ff14; font-size:0.72rem;">● Video OK</span>
+                ${isCurrent ? '<span style="color:var(--neon-pink); font-weight:800;">[NU AAN DE BEURT]</span>' : ''}
+                ${isPast ? '<span style="color:#888;">[AFGEROND]</span>' : ''}
+              </div>
+            </div>
+          </div>
+          <div class="secret-item-right">
+            <button class="secret-item-btn" onclick="window.workoutApp.moveScheduleItem(${index}, -1)" ${index === 0 ? 'disabled' : ''} title="Verplaats omhoog">
+              ▲
+            </button>
+            <button class="secret-item-btn" onclick="window.workoutApp.moveScheduleItem(${index}, 1)" ${index === totalCount - 1 ? 'disabled' : ''} title="Verplaats omlaag">
+              ▼
+            </button>
+            <button class="secret-item-btn" onclick="window.workoutApp.replaceScheduleItem(${index})" title="Vervang met een andere oefening">
+              🎲
+            </button>
+            <button class="secret-item-btn btn-delete" onclick="window.workoutApp.deleteScheduleItem(${index})" title="Verwijder uit schema">
+              🗑️
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    this.elements.secretScheduleList.innerHTML = html;
+  }
+
+  /**
+   * Move an exercise up or down in the planned schedule
+   */
+  moveScheduleItem(index, direction) {
+    const target = index + direction;
+    if (target < 0 || target >= this.plannedSchedule.length) return;
+    const temp = this.plannedSchedule[index];
+    this.plannedSchedule[index] = this.plannedSchedule[target];
+    this.plannedSchedule[target] = temp;
+    this.renderSecretSchedule();
+  }
+
+  /**
+   * Delete an exercise from today's planned schedule
+   */
+  deleteScheduleItem(index) {
+    if (this.plannedSchedule.length <= 1) {
+      alert("Het schema moet tenminste 1 oefening bevatten.");
+      return;
+    }
+    this.plannedSchedule.splice(index, 1);
+    if (this.currentScheduleIndex > index) {
+      this.currentScheduleIndex = Math.max(0, this.currentScheduleIndex - 1);
+    }
+    this.renderSecretSchedule();
+  }
+
+  /**
+   * Replace a specific exercise with another random working one
+   */
+  async replaceScheduleItem(index) {
+    const allEnabled = [];
+    for (const mat in this.database) {
+      for (const ex of this.database[mat]) {
+        if (!this.disabledExerciseIds.has(ex.id) && this._hasValidWorkingVideo(ex)) {
+          allEnabled.push({ ...ex, material: mat });
+        }
+      }
+    }
+
+    const currentId = this.plannedSchedule[index]?.id;
+    const alternatives = allEnabled.filter(a => a.id !== currentId);
+    if (alternatives.length === 0) return;
+
+    const chosen = alternatives[Math.floor(Math.random() * alternatives.length)];
+    this.plannedSchedule[index].id = chosen.id;
+    this.plannedSchedule[index].exercise = chosen;
+    this.plannedSchedule[index].material = chosen.material;
+    this.renderSecretSchedule();
+  }
+
+  /**
+   * Add a new exercise to the end of the planned schedule
+   */
+  async addExerciseToSchedule() {
+    const allEnabled = [];
+    for (const mat in this.database) {
+      for (const ex of this.database[mat]) {
+        if (!this.disabledExerciseIds.has(ex.id) && this._hasValidWorkingVideo(ex)) {
+          allEnabled.push({ ...ex, material: mat });
+        }
+      }
+    }
+    if (allEnabled.length === 0) return;
+
+    const chosen = allEnabled[Math.floor(Math.random() * allEnabled.length)];
+    const minStep = Math.ceil(this.minTime / 10) * 10;
+    const maxStep = Math.floor(this.maxTime / 10) * 10;
+    const timeChoices = [];
+    for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
+    const chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
+
+    this.plannedSchedule.push({
+      id: chosen.id,
+      exercise: chosen,
+      material: chosen.material,
+      time: chosenTime,
+      status: 'pending',
+      videoValid: true
+    });
+    this.renderSecretSchedule();
   }
 
   /**
@@ -1314,7 +1684,7 @@ class WorkoutApp {
   }
 
   /**
-   * Handle click on SPIN button
+   * Handle click on SPIN button (or automatic trigger on start time)
    */
   async handleSpin() {
     // If class end time has been reached or remaining time is insufficient for full exercise cycle
@@ -1324,141 +1694,61 @@ class WorkoutApp {
       return;
     }
 
-    // Gather active pools
-    const activeMaterials = [];
-    const activeExercisesMap = {}; // material -> exercises
-    const allEnabledExercises = [];
-
-    for (const materialName in this.database) {
-      const enabledExs = this.database[materialName].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
-        return true;
-      });
-      if (enabledExs.length > 0) {
-        activeMaterials.push(materialName);
-        activeExercisesMap[materialName] = enabledExs;
-        allEnabledExercises.push(...enabledExs);
+    // If user clicked SPIN before scheduled start time, immediately activate session
+    const now = new Date();
+    const nowHHMM = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    if (!this._isSessionActive) {
+      this._isSessionActive = true;
+      if (this.classStartTime && this.classStartTime > nowHHMM) {
+        this.classStartTime = nowHHMM;
       }
     }
 
-    // Validation
-    if (activeMaterials.length === 0 || allEnabledExercises.length === 0) {
-      alert("Kies tenminste één actieve oefening (met werkende video) in de instellingen!");
+    // Ensure planned schedule exists
+    if (this.plannedSchedule.length === 0) {
+      await this.generatePlannedSchedule(true);
+    }
+
+    if (this.plannedSchedule.length === 0) {
+      alert("Kies tenminste één actieve oefening in de instellingen!");
       this.openAdmin(true);
       return;
     }
 
-    // Prune stale IDs from tracking sets if database/filters changed
-    const activeExerciseIdSet = new Set(allEnabledExercises.map(ex => ex.id));
-    for (const id of this.usedExerciseIds) {
-      if (!activeExerciseIdSet.has(id)) {
-        this.usedExerciseIds.delete(id);
-      }
-    }
-    const activeMaterialSet = new Set(activeMaterials);
-    for (const mat of this.usedMaterials) {
-      if (!activeMaterialSet.has(mat)) {
-        this.usedMaterials.delete(mat);
-      }
-    }
-
     let chosenMaterial = null;
     let chosenExercise = null;
+    let chosenTime = null;
 
-    if (this.noRepeatExercises && this.noRepeatMaterials) {
-      // 1. Both options active: Materials cycle uniquely AND exercises cycle uniquely
-      // Find candidate materials: not yet used in current material-cycle AND with at least one unused exercise
-      let candidateMaterials = activeMaterials.filter(m => 
-        !this.usedMaterials.has(m) && activeExercisesMap[m].some(ex => !this.usedExerciseIds.has(ex.id))
-      );
-
-      // If no candidate materials available:
-      if (candidateMaterials.length === 0) {
-        // Check if all exercises across the entire active pool have been used
-        const allExercisesUsed = allEnabledExercises.every(ex => this.usedExerciseIds.has(ex.id));
-        if (allExercisesUsed) {
-          this.usedExerciseIds.clear();
-          this.usedHistory = [];
-        }
-        // Reset materials cycle when no unused materials with fresh exercises remain
-        this.usedMaterials.clear();
-
-        // Re-evaluate materials with unused exercises
-        candidateMaterials = activeMaterials.filter(m => 
-          activeExercisesMap[m].some(ex => !this.usedExerciseIds.has(ex.id))
-        );
-
-        // Fallback if still empty
-        if (candidateMaterials.length === 0) {
-          this.usedExerciseIds.clear();
-          this.usedHistory = [];
-          candidateMaterials = [...activeMaterials];
-        }
-      }
-
-      chosenMaterial = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
-      
-      let candidateExercises = activeExercisesMap[chosenMaterial].filter(ex => !this.usedExerciseIds.has(ex.id));
-      if (candidateExercises.length === 0) {
-        candidateExercises = activeExercisesMap[chosenMaterial];
-      }
-      chosenExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
-
-    } else if (this.noRepeatExercises) {
-      // 2. Only exercises non-repeating (materials can repeat)
-      let candidateExercises = allEnabledExercises.filter(ex => !this.usedExerciseIds.has(ex.id));
-      if (candidateExercises.length === 0) {
-        this.usedExerciseIds.clear();
-        this.usedHistory = [];
-        candidateExercises = [...allEnabledExercises];
-      }
-
-      chosenExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
-      chosenMaterial = chosenExercise.material_name || Object.keys(activeExercisesMap).find(m => activeExercisesMap[m].includes(chosenExercise)) || activeMaterials[0];
-
-    } else if (this.noRepeatMaterials) {
-      // 3. Only materials non-repeating (exercises can repeat within or across cycles)
-      let candidateMaterials = activeMaterials.filter(m => !this.usedMaterials.has(m));
-      if (candidateMaterials.length === 0) {
-        this.usedMaterials.clear();
-        candidateMaterials = [...activeMaterials];
-      }
-
-      chosenMaterial = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
-      const exercisesForMaterial = activeExercisesMap[chosenMaterial];
-      chosenExercise = exercisesForMaterial[Math.floor(Math.random() * exercisesForMaterial.length)];
-
+    if (this.currentScheduleIndex < this.plannedSchedule.length) {
+      const item = this.plannedSchedule[this.currentScheduleIndex];
+      chosenMaterial = item.material;
+      chosenExercise = item.exercise;
+      chosenTime = item.time;
+      item.status = 'active';
+      this.currentScheduleIndex++;
     } else {
-      // 4. Pure random
-      chosenMaterial = activeMaterials[Math.floor(Math.random() * activeMaterials.length)];
-      const exercisesForMaterial = activeExercisesMap[chosenMaterial];
-      chosenExercise = exercisesForMaterial[Math.floor(Math.random() * exercisesForMaterial.length)];
+      // Beyond initial schedule: add additional exercise from pool
+      await this.addExerciseToSchedule();
+      const item = this.plannedSchedule[this.plannedSchedule.length - 1];
+      chosenMaterial = item.material;
+      chosenExercise = item.exercise;
+      chosenTime = item.time;
+      item.status = 'active';
+      this.currentScheduleIndex = this.plannedSchedule.length;
     }
 
-    // Background validation during spin for chosen exercise video
+    // Live video verification during spin
     const videoId = this._extractYouTubeId(chosenExercise.video_search_url);
     if (videoId) {
       const isValid = await this.validateYouTubeVideo(videoId);
       if (!isValid) {
-        // Video is refused / broken! Mark in broken list
         this.brokenVideoExerciseIds.add(chosenExercise.id);
         this._saveBrokenVideos();
         this.logBrokenVideoToGoogleSheet(chosenExercise, 'Gedetecteerd tijdens spin');
-        // If requireVideo is on, pick an alternative working exercise
-        if (this.requireVideo) {
-          const workingAlternatives = allEnabledExercises.filter(ex => 
-            ex.id !== chosenExercise.id && this._hasValidWorkingVideo(ex)
-          );
-          if (workingAlternatives.length > 0) {
-            chosenExercise = workingAlternatives[Math.floor(Math.random() * workingAlternatives.length)];
-            chosenMaterial = chosenExercise.material_name || chosenMaterial;
-          }
-        }
       }
     }
 
-    // Finalize recording for non-repeat pools
+    // Track non-repeat cycle sets
     if (this.noRepeatMaterials) {
       this.usedMaterials.add(chosenMaterial);
     }
@@ -1466,21 +1756,7 @@ class WorkoutApp {
       this.usedExerciseIds.add(chosenExercise.id);
     }
 
-    // 3. Choose random time step
-    const activeTimes = [];
-    const minStep = Math.ceil(this.minTime / 10) * 10;
-    const maxStep = Math.floor(this.maxTime / 10) * 10;
-    if (minStep <= maxStep) {
-      for (let t = minStep; t <= maxStep; t += 10) {
-        activeTimes.push(t);
-      }
-    } else {
-      const singleChoice = Math.round(this.minTime / 10) * 10;
-      activeTimes.push(singleChoice > 0 ? singleChoice : 10);
-    }
-    const chosenTime = activeTimes[Math.floor(Math.random() * activeTimes.length)];
-
-    // Cache selection
+    // Cache active selection
     this.activeMaterial = chosenMaterial;
     this.activeExercise = chosenExercise;
     this.activeTime = chosenTime;
@@ -1494,6 +1770,7 @@ class WorkoutApp {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
     this._saveUsedHistory();
+    this.renderSecretSchedule();
 
     // Update UI status
     this.elements.spinBtn.disabled = true;
