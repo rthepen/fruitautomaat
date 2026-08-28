@@ -2059,6 +2059,12 @@ header {
   .card-time {
     font-size: 1.25rem;
   }
+  .spin-button {
+    height: 52px;
+    font-size: 1.4rem;
+  }
+}
+
 /* ==========================================================================
    SECRET TRAINER PLANNER MODAL / DRAWER
    ========================================================================== */
@@ -2075,12 +2081,14 @@ header {
   align-items: center;
   padding: 1.5rem;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s;
 }
 
 .secret-planner-overlay.open {
   opacity: 1;
+  visibility: visible;
   pointer-events: auto;
 }
 
@@ -2326,8 +2334,4 @@ header {
     justify-content: flex-end;
   }
 }
-  .spin-button {
-    height: 52px;
-    font-size: 1.4rem;
-  }
-}
+
