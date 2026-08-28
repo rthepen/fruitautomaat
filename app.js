@@ -202,6 +202,20 @@ class WorkoutApp {
     this.elements.btnPause.addEventListener('click', () => this.toggleWorkoutPause());
     this.elements.btnSkip.addEventListener('click', () => this.handleWorkoutSkip());
     this.elements.btnReset.addEventListener('click', () => this.handleWorkoutReset());
+
+    // Window Resize / Orientation Change (e.g. iPhone rotation)
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (this.slotMachine) this.slotMachine.realign();
+      }, 100);
+    });
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => {
+        if (this.slotMachine) this.slotMachine.realign();
+      }, 150);
+    });
   }
 
   /**

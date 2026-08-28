@@ -43,6 +43,7 @@ body {
   font-family: var(--font-sans);
   overflow: hidden; /* Hide scrollbars completely */
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -69,7 +70,12 @@ body {
   flex-direction: column;
   position: relative;
   overflow: hidden; /* Hide scrollbars completely */
+  height: 100%;
   background: radial-gradient(circle at center, #1b112c 0%, var(--bg-primary) 70%);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 /* Header & Navigation */
@@ -1484,37 +1490,328 @@ header {
   pointer-events: all;
 }
 
-/* Layout scaling for smaller screens/aspect ratios */
-@media (max-height: 900px) {
+/* ==========================================================================
+   RESPONSIVE DESIGN (IPHONE / MOBILE / TABLET)
+   ========================================================================== */
+
+/* Layout scaling for screens up to 900px width (e.g. iPhone 17 Pro Max, Mobile) */
+@media (max-width: 900px) {
   header {
-    padding: 1rem 2rem;
+    padding: 0.6rem 0.8rem;
+    gap: 0.5rem;
+    flex-wrap: wrap;
   }
+
   .logo {
-    font-size: 1.8rem;
+    font-size: 1.35rem;
+    letter-spacing: 1px;
   }
+
+  .header-clock {
+    gap: 0;
+  }
+
+  .header-clock-time {
+    font-size: 1.25rem;
+    letter-spacing: 1px;
+  }
+
+  .header-clock-end {
+    font-size: 0.65rem;
+    letter-spacing: 0.5px;
+  }
+
+  .header-clock-remaining {
+    font-size: 0.85rem;
+  }
+
+  .header-controls {
+    gap: 0.4rem;
+  }
+
+  .header-controls .btn {
+    padding: 0.45rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  .btn-icon {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+  }
+
+  /* Main Container on Mobile */
+  .app-main {
+    flex-direction: column;
+    padding: 0.4rem 0.8rem 0.8rem 0.8rem;
+    gap: 0.8rem;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    height: calc(100% - 64px);
+  }
+
+  /* Left and Right Columns on Mobile */
+  .left-main-column {
+    width: 100%;
+    min-height: auto;
+  }
+
+  .right-main-column {
+    width: 100%;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  /* State: IDLE on Mobile - focus entirely on Slot Machine */
+  .state-idle .left-main-column {
+    height: 100%;
+    justify-content: center;
+    align-items: center;
+    margin: auto 0;
+  }
+
+  .state-idle .right-main-column {
+    display: none;
+  }
+
+  .state-idle .unified-timer-panel {
+    display: none;
+  }
+
+  .slot-machine-panel {
+    width: 100%;
+    max-width: 100%;
+  }
+
   .slot-machine-cabinet {
-    padding: 1.5rem;
-    max-width: 1000px;
-    gap: 1.2rem;
+    width: 100%;
+    max-width: 100%;
+    padding: 0.6rem;
+    border-radius: 18px;
+    border-width: 2px;
+    gap: 0.5rem;
   }
-  /* Additional vertical space optimization for active HUD */
-  .view {
-    padding: 1rem;
+
+  .slot-machine-cabinet::before {
+    border-radius: 20px;
+    top: -4px; left: -4px; right: -4px; bottom: -4px;
   }
-  .workout-hud {
-    height: 98%;
+
+  .reels-wrapper {
+    grid-template-columns: 1fr 1.6fr 0.9fr;
+    gap: 0.4rem;
+    padding: 0.4rem;
+    border-radius: 12px;
   }
+
+  .reel-viewport {
+    height: 160px;
+    border-width: 2px;
+    border-radius: 8px;
+  }
+
+  .reel-card {
+    height: 80px;
+    padding: 0.2rem 0.3rem;
+  }
+
+  .card-title {
+    font-size: 0.82rem;
+    line-height: 1.15;
+    word-break: break-word;
+  }
+
+  .exercise-title {
+    font-size: 0.82rem;
+    line-height: 1.15;
+    word-break: break-word;
+  }
+
+  .card-subtitle {
+    font-size: 0.58rem;
+    margin-top: 0.1rem;
+  }
+
+  .card-time {
+    font-size: 1.45rem;
+  }
+
+  .card-unit {
+    font-size: 0.7rem;
+  }
+
+  .slot-controls {
+    padding-top: 0.4rem;
+  }
+
+  .spin-button {
+    width: 100%;
+    max-width: 260px;
+    height: 60px;
+    font-size: 1.6rem;
+    border-radius: 30px;
+    letter-spacing: 2px;
+  }
+
+  /* State: COUNTDOWN & ACTIVE on Mobile - Slot machine collapses, Workout UI takes center stage */
+  .state-countdown .slot-machine-panel,
+  .state-active .slot-machine-panel {
+    display: none;
+  }
+
+  .state-countdown .left-main-column,
+  .state-active .left-main-column {
+    order: 2;
+    gap: 0.5rem;
+    justify-content: flex-start;
+  }
+
+  .state-countdown .right-main-column,
+  .state-active .right-main-column {
+    order: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .exercise-header {
+    text-align: center;
+  }
+
   .hud-exercise-name {
-    font-size: 4vw;
+    font-size: 1.6rem;
+    line-height: 1.2;
+    word-break: break-word;
   }
+
   .hud-material-info {
+    font-size: 0.85rem;
+    letter-spacing: 1.5px;
+    margin-top: 0.15rem;
+  }
+
+  .video-slot {
+    width: 100%;
+    max-height: 220px;
+    aspect-ratio: 16/9;
+    margin: 0 auto;
+  }
+
+  .video-slot iframe,
+  .video-slot .video-fallback-img {
+    border-radius: 10px;
+    border-width: 2px;
+  }
+
+  .unified-timer-panel {
+    gap: 0.2rem;
+  }
+
+  .unified-timer-label {
+    font-size: 1rem;
+    letter-spacing: 2px;
+  }
+
+  .unified-timer-circle-wrap {
+    width: 150px;
+    height: 150px;
+    margin: 0 auto;
+  }
+
+  .unified-timer-circle-wrap .timer-digits {
+    font-size: 2.6rem;
+  }
+
+  .trainer-bar {
+    width: 100%;
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.3rem;
+  }
+
+  .trainer-bar .btn {
+    flex: 1;
+    justify-content: center;
+    padding: 0.6rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .instruction-card {
+    padding: 0.6rem 0.8rem;
+    border-radius: 10px;
+    margin-top: 0.2rem;
+  }
+
+  .instruction-title {
+    font-size: 0.8rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .instruction-text {
+    font-size: 0.82rem;
+    line-height: 1.35;
+  }
+
+  /* Finished overlay on mobile */
+  .finished-overlay-title {
+    font-size: 2.4rem;
+    letter-spacing: 2px;
+  }
+
+  .finished-overlay-sub {
+    font-size: 1.1rem;
+  }
+
+  /* Admin Drawer on Mobile (Full Screen Native Experience) */
+  .admin-overlay {
+    width: 100vw;
+    right: -100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    border-left: none;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .admin-header {
+    padding: 1rem 1.2rem;
+  }
+
+  .admin-header h2 {
     font-size: 1.4rem;
   }
-  .instruction-card {
-    padding: 1rem;
+
+  .admin-content {
+    padding: 1rem 1.2rem;
+    gap: 1.2rem;
   }
-  .trainer-bar {
-    margin-top: 0.5rem;
+
+  .admin-footer {
+    padding: 0.8rem 1.2rem;
+  }
+
+  .settings-grid {
+    gap: 0.6rem 0.8rem;
+  }
+}
+
+/* Extra small mobile adjustments (e.g. <= 380px) */
+@media (max-width: 380px) {
+  .logo {
+    font-size: 1.15rem;
+  }
+  .header-clock-time {
+    font-size: 1.1rem;
+  }
+  .card-title, .exercise-title {
+    font-size: 0.75rem;
+  }
+  .card-time {
+    font-size: 1.25rem;
+  }
+  .spin-button {
+    height: 52px;
+    font-size: 1.4rem;
   }
 }
 
