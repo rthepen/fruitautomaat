@@ -434,16 +434,28 @@ class WorkoutApp {
     this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
     this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
     
-    // Always start a brand new training session on page reload
+    // Default class schedule: Start 20:15, End 20:40
+    // If reloaded between 20:15 and 20:40: keep end at 20:40, set start to now + 1 min
     const now = new Date();
-    const startDate = new Date(now.getTime() + 2 * 60000);
-    const endDate = new Date(now.getTime() + 25 * 60000);
-    const sH = String(startDate.getHours()).padStart(2, '0');
-    const sM = String(startDate.getMinutes()).padStart(2, '0');
-    const eH = String(endDate.getHours()).padStart(2, '0');
-    const eM = String(endDate.getMinutes()).padStart(2, '0');
-    this.classStartTime = `${sH}:${sM}`;
-    this.classEndTime = `${eH}:${eM}`;
+    const tStart2015 = new Date(now);
+    tStart2015.setHours(20, 15, 0, 0);
+
+    const tEnd2040 = new Date(now);
+    tEnd2040.setHours(20, 40, 0, 0);
+
+    if (now >= tStart2015 && now < tEnd2040) {
+      // Inside 20:15 - 20:40 window: start over 1 minuut vanaf huidige tijd
+      const oneMinLater = new Date(now.getTime() + 1 * 60000);
+      const sH = String(oneMinLater.getHours()).padStart(2, '0');
+      const sM = String(oneMinLater.getMinutes()).padStart(2, '0');
+      this.classStartTime = `${sH}:${sM}`;
+      this.classEndTime = '20:40';
+    } else {
+      // Default standard times
+      this.classStartTime = '20:15';
+      this.classEndTime = '20:40';
+    }
+
     this._setCookie('workout_class_start', this.classStartTime);
     this._setCookie('workout_class_end', this.classEndTime);
 
