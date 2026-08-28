@@ -426,10 +426,40 @@ class WorkoutApp {
     this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
     this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
     
+    // Default start time (over 2 min) and end time (over 25 min) on initial load or if expired
+    const now = new Date();
+    let needsDefaultTimes = false;
+
+    if (!this.classStartTime || !this.classEndTime) {
+      needsDefaultTimes = true;
+    } else {
+      const [endH, endM] = this.classEndTime.split(':').map(Number);
+      const savedEndDate = new Date(now);
+      savedEndDate.setHours(endH, endM, 0, 0);
+      if (now >= savedEndDate) {
+        needsDefaultTimes = true;
+      }
+    }
+
+    if (needsDefaultTimes) {
+      const startDate = new Date(now.getTime() + 2 * 60000);
+      const endDate = new Date(now.getTime() + 25 * 60000);
+      const sH = String(startDate.getHours()).padStart(2, '0');
+      const sM = String(startDate.getMinutes()).padStart(2, '0');
+      const eH = String(endDate.getHours()).padStart(2, '0');
+      const eM = String(endDate.getMinutes()).padStart(2, '0');
+      this.classStartTime = `${sH}:${sM}`;
+      this.classEndTime = `${eH}:${eM}`;
+      this._setCookie('workout_class_start', this.classStartTime);
+      this._setCookie('workout_class_end', this.classEndTime);
+    }
+
     if (this.elements.classStartInput) {
       this.elements.classStartInput.value = this.classStartTime;
     }
-    this.elements.classEndInput.value = this.classEndTime;
+    if (this.elements.classEndInput) {
+      this.elements.classEndInput.value = this.classEndTime;
+    }
     this.elements.minTimeInput.value = this.minTime;
     this.elements.maxTimeInput.value = this.maxTime;
     this.elements.countdownTimeInput.value = this.countdownTime;
@@ -1056,6 +1086,10 @@ class WorkoutApp {
    */
   _isClassFinished() {
     if (!this.classEndTime) return false;
+    // Prevent false trigger on fresh page reload before session is active
+    if (!this._isSessionActive && this.usedHistory.length === 0) {
+      return false;
+    }
     const [h, m] = this.classEndTime.split(':').map(Number);
     const now = new Date();
     const end = new Date(now);
@@ -1223,10 +1257,12 @@ class WorkoutApp {
    */
 
   /**
-   * Generates a complete workout sequence in advance and pre-tests all videos
+   * Generates a complete workout sequence in advance and pre-tests all videos in parallel
    */
   async generatePlannedSchedule(forceNew = false) {
     if (!forceNew && this.plannedSchedule.length > 0) return;
+
+    this._isScheduleValidating = true;
 
     const activeMaterials = [];
     const activeExercisesMap = {};
@@ -1247,6 +1283,7 @@ class WorkoutApp {
 
     if (activeMaterials.length === 0 || allEnabled.length === 0) {
       this.plannedSchedule = [];
+      this._isScheduleValidating = false;
       this.renderSecretSchedule();
       return;
     }
@@ -1300,22 +1337,6 @@ class WorkoutApp {
       for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
       const chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
 
-      // Pre-validate video
-      const vId = this._extractYouTubeId(ex.video_search_url);
-      let isValid = true;
-      if (vId) {
-        isValid = await this.validateYouTubeVideo(vId);
-        if (!isValid) {
-          this.brokenVideoExerciseIds.add(ex.id);
-          this.logBrokenVideoToGoogleSheet(ex, 'Pre-scan defect gevonden');
-          const alt = allEnabled.find(a => a.id !== ex.id && this._hasValidWorkingVideo(a));
-          if (alt) {
-            ex = alt;
-            isValid = true;
-          }
-        }
-      }
-
       usedMatSet.add(mat);
       usedExIdSet.add(ex.id);
       accumSeconds += (this.countdownTime + chosenTime + 3);
@@ -1326,11 +1347,34 @@ class WorkoutApp {
         material: mat,
         time: chosenTime,
         status: 'pending',
-        videoValid: isValid
+        videoValid: true
       });
 
       if (accumSeconds >= totalSessionSeconds) break;
     }
+
+    // Fast parallel background video validation across all scheduled items
+    const validationPromises = newSchedule.map(async (item) => {
+      const vId = this._extractYouTubeId(item.exercise.video_search_url);
+      if (vId) {
+        const isValid = await this.validateYouTubeVideo(vId);
+        if (!isValid) {
+          this.brokenVideoExerciseIds.add(item.exercise.id);
+          this._saveBrokenVideos();
+          this.logBrokenVideoToGoogleSheet(item.exercise, 'Pre-scan defect gevonden');
+          const alt = allEnabled.find(a => a.id !== item.exercise.id && this._hasValidWorkingVideo(a));
+          if (alt) {
+            item.id = alt.id;
+            item.exercise = alt;
+            item.material = alt.material_name || item.material;
+            item.videoValid = true;
+          }
+        }
+      }
+    });
+
+    await Promise.all(validationPromises);
+    this._isScheduleValidating = false;
 
     this.plannedSchedule = newSchedule;
     this.currentScheduleIndex = 0;
@@ -1801,6 +1845,23 @@ class WorkoutApp {
     // Ensure planned schedule exists
     if (this.plannedSchedule.length === 0) {
       await this.generatePlannedSchedule(true);
+    }
+
+    // Wait if background video checks for the schedule are still finishing
+    if (this._isScheduleValidating) {
+      if (this.elements.spinBtn) {
+        this.elements.spinBtn.disabled = true;
+        this.elements.spinBtn.textContent = "⏳ VIDEO'S TESTEN...";
+      }
+      let waitCount = 0;
+      while (this._isScheduleValidating && waitCount < 50) {
+        await new Promise(r => setTimeout(r, 100));
+        waitCount++;
+      }
+      if (this.elements.spinBtn) {
+        this.elements.spinBtn.textContent = "SPIN";
+        this.elements.spinBtn.disabled = false;
+      }
     }
 
     if (this.plannedSchedule.length === 0) {
