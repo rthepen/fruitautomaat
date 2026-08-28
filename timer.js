@@ -16,6 +16,11 @@ class WorkoutTimer {
     this.animationFrameId = null;
     this.lastSecFired = null; // To ensure callbacks and sounds fire exactly once per second
     
+    // Voice cue tracking flags
+    this.halfwayFired = false;
+    this.thirtySecFired = false;
+    this.tenSecFired = false;
+
     // Callbacks
     this.onTick = null; // fn(secondsRemaining)
     this.onCountdownTick = null; // fn(secondsRemaining)
@@ -39,6 +44,9 @@ class WorkoutTimer {
 
     this.elapsedTime = 0;
     this.lastSecFired = null;
+    this.halfwayFired = false;
+    this.thirtySecFired = false;
+    this.tenSecFired = false;
     
     this.setState(this.countdownDuration > 0 ? 'COUNTDOWN' : 'RUNNING');
     
@@ -88,6 +96,9 @@ class WorkoutTimer {
     this.startTime = null;
     this.pauseTime = null;
     this.lastSecFired = null;
+    this.halfwayFired = false;
+    this.thirtySecFired = false;
+    this.tenSecFired = false;
   }
 
   /**
@@ -109,9 +120,9 @@ class WorkoutTimer {
         this.lastSecFired = remainingSecs;
         if (this.onCountdownTick) this.onCountdownTick(remainingSecs);
         
-        // Audio tick rule: beep for the last 3, 2, 1 seconds of countdown
+        // Audio tick rule: beep / countdown for last 3, 2, 1 seconds of countdown
         if (remainingSecs <= 3 && remainingSecs > 0) {
-          if (window.audioEngine) window.audioEngine.playCountdown();
+          if (window.audioEngine) window.audioEngine.playCountdown(remainingSecs);
         }
       }
 
@@ -122,7 +133,7 @@ class WorkoutTimer {
         this.elapsedTime = 0;
         this.lastSecFired = null;
         
-        // Play start signal
+        // Play start signal (coach voice / buzzer)
         if (window.audioEngine) window.audioEngine.playStart();
       }
     } else if (this.state === 'RUNNING') {
@@ -134,9 +145,28 @@ class WorkoutTimer {
         this.lastSecFired = remainingSecs;
         if (this.onTick) this.onTick(remainingSecs);
 
-        // Audio tick rule: beep for the last 3, 2, 1 seconds of the workout
+        // Halfway cue (for workouts >= 20s)
+        const halfwaySec = Math.round(this.duration / 2);
+        if (remainingSecs === halfwaySec && this.duration >= 20 && !this.halfwayFired && remainingSecs > 10) {
+          this.halfwayFired = true;
+          if (window.audioEngine) window.audioEngine.playHalfway();
+        }
+
+        // 30 seconds cue (for workouts >= 45s)
+        if (remainingSecs === 30 && this.duration >= 45 && !this.thirtySecFired) {
+          this.thirtySecFired = true;
+          if (window.audioEngine) window.audioEngine.play30s();
+        }
+
+        // 10 seconds cue (for workouts >= 20s)
+        if (remainingSecs === 10 && this.duration >= 20 && !this.tenSecFired) {
+          this.tenSecFired = true;
+          if (window.audioEngine) window.audioEngine.play10s();
+        }
+
+        // Final 3, 2, 1 countdown beeps
         if (remainingSecs <= 3 && remainingSecs > 0) {
-          if (window.audioEngine) window.audioEngine.playCountdown();
+          if (window.audioEngine) window.audioEngine.playCountdown(remainingSecs);
         }
       }
 
@@ -145,8 +175,8 @@ class WorkoutTimer {
         this.setState('FINISHED');
         cancelAnimationFrame(this.animationFrameId);
         
-        // Play stop signal
-        if (window.audioEngine) window.audioEngine.playStop();
+        // Play finish signal (coach voice + victory)
+        if (window.audioEngine) window.audioEngine.playFinish();
         
         if (this.onComplete) this.onComplete();
         return;

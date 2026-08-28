@@ -1234,19 +1234,32 @@ header {
 }
 
 .input-group input[type="number"],
-.input-group input[type="time"] {
+.input-group input[type="time"],
+.input-group select {
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid #333344;
   border-radius: 6px;
   padding: 0.45rem 0.7rem;
   color: #fff;
-  font-family: var(--font-digital);
-  font-size: 1rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
   width: 100%;
   transition: border-color 0.2s ease;
 }
 
-.input-group input:focus {
+.input-group input[type="number"],
+.input-group input[type="time"] {
+  font-family: var(--font-digital);
+  font-size: 1rem;
+}
+
+.input-group select option {
+  background: #121218;
+  color: #fff;
+}
+
+.input-group input:focus,
+.input-group select:focus {
   outline: none;
   border-color: var(--neon-cyan);
   box-shadow: 0 0 5px rgba(0, 255, 255, 0.3);

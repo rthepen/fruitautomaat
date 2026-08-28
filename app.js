@@ -26,6 +26,7 @@ class WorkoutApp {
     this.classEndTime = ''; // 'HH:MM' string
     this.volume = 2.0;     // 0–3.0 (200% default)
     this.autoPlay = false;  // Auto-spin until class ends
+    this.coach = 'tabataman'; // 'tabataman', 'eva', 'arcade'
     this.noRepeatExercises = true; // Exhaust pool of exercises before repeating (default true)
     this.noRepeatMaterials = true; // Exhaust pool of materials before repeating (default true)
     this.usedExerciseIds = new Set(); // Track used exercises in current cycle
@@ -116,6 +117,7 @@ class WorkoutApp {
       countdownTimeInput: document.getElementById('countdown-time-input'),
       classEndInput: document.getElementById('class-end-input'),
       volumeInput: document.getElementById('volume-input'),
+      coachSelect: document.getElementById('coach-select'),
       requireVideoInput: document.getElementById('require-video-input'),
       autoplayInput: document.getElementById('autoplay-input'),
       autoplayStopBtn: document.getElementById('autoplay-stop-btn'),
@@ -281,6 +283,7 @@ class WorkoutApp {
     this.classEndTime = this._getCookie('workout_class_end') || '';
     this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
     this.autoPlay = this._getCookie('workout_autoplay') === 'true';
+    this.coach = this._getCookie('workout_coach') || 'tabataman';
     this.requireVideo = this._getCookie('workout_require_video') !== 'false';
     this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
     this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
@@ -290,6 +293,9 @@ class WorkoutApp {
     this.elements.countdownTimeInput.value = this.countdownTime;
     this.elements.classEndInput.value = this.classEndTime;
     this.elements.volumeInput.value = Math.round(this.volume * 100);
+    if (this.elements.coachSelect) {
+      this.elements.coachSelect.value = this.coach;
+    }
     this.elements.autoplayInput.checked = this.autoPlay;
     this.elements.requireVideoInput.checked = this.requireVideo;
     if (this.elements.noRepeatExercisesInput) {
@@ -297,6 +303,10 @@ class WorkoutApp {
     }
     if (this.elements.noRepeatMaterialsInput) {
       this.elements.noRepeatMaterialsInput.checked = this.noRepeatMaterials;
+    }
+
+    if (window.audioEngine) {
+      window.audioEngine.setCoach(this.coach);
     }
 
     // Load used pool history from localStorage
@@ -338,6 +348,7 @@ class WorkoutApp {
     let classEnd = this.elements.classEndInput.value || '';
     let vol = parseInt(this.elements.volumeInput.value) || 200;
     let autoPlay = this.elements.autoplayInput.checked;
+    let coach = this.elements.coachSelect ? this.elements.coachSelect.value : 'tabataman';
     let requireVideo = this.elements.requireVideoInput.checked;
     let noRepeatExercises = this.elements.noRepeatExercisesInput ? this.elements.noRepeatExercisesInput.checked : true;
     let noRepeatMaterials = this.elements.noRepeatMaterialsInput ? this.elements.noRepeatMaterialsInput.checked : true;
@@ -355,6 +366,7 @@ class WorkoutApp {
     this.classEndTime = classEnd;
     this.volume = vol / 100;
     this.autoPlay = autoPlay;
+    this.coach = coach;
     this.requireVideo = requireVideo;
     this.noRepeatExercises = noRepeatExercises;
     this.noRepeatMaterials = noRepeatMaterials;
@@ -365,9 +377,14 @@ class WorkoutApp {
     this._setCookie('workout_class_end', this.classEndTime);
     this._setCookie('workout_volume', this.volume);
     this._setCookie('workout_autoplay', this.autoPlay);
+    this._setCookie('workout_coach', this.coach);
     this._setCookie('workout_require_video', this.requireVideo);
     this._setCookie('workout_no_repeat_exercises', this.noRepeatExercises);
     this._setCookie('workout_no_repeat_materials', this.noRepeatMaterials);
+
+    if (window.audioEngine) {
+      window.audioEngine.setCoach(this.coach);
+    }
 
     // Clear tracking if toggled off
     if (!this.noRepeatExercises) {
@@ -1246,7 +1263,10 @@ class WorkoutApp {
       this.elements.searchBar.value = '';
       this.filterAdminTree('');
       
-      // Sync toggle checkboxes to saved state
+      // Sync inputs to saved state
+      if (this.elements.coachSelect) {
+        this.elements.coachSelect.value = this.coach;
+      }
       if (this.elements.noRepeatExercisesInput) {
         this.elements.noRepeatExercisesInput.checked = this.noRepeatExercises;
       }
