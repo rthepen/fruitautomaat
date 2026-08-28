@@ -35,7 +35,8 @@ class WorkoutTimer {
     this.stop(); // Reset existing timer if running
 
     this.duration = workoutSeconds;
-    this.countdownDuration = callbacks.countdownDuration !== undefined ? callbacks.countdownDuration : 5;
+    this.countdownDuration = callbacks.countdownDuration !== undefined ? callbacks.countdownDuration : 10;
+    this.isLastRound = !!callbacks.isLastRound;
     
     this.onTick = callbacks.onTick || null;
     this.onCountdownTick = callbacks.onCountdownTick || null;
@@ -48,7 +49,15 @@ class WorkoutTimer {
     this.thirtySecFired = false;
     this.tenSecFired = false;
     
-    this.setState(this.countdownDuration > 0 ? 'COUNTDOWN' : 'RUNNING');
+    if (this.countdownDuration > 0) {
+      this.setState('COUNTDOWN');
+      // Play prep intro voice cue ("Get ready!" / "Maak je klaar!")
+      if (window.audioEngine) {
+        window.audioEngine.playPrepIntro();
+      }
+    } else {
+      this.setState('RUNNING');
+    }
     
     this.startTime = performance.now();
     this.tickLoop();
@@ -99,6 +108,7 @@ class WorkoutTimer {
     this.halfwayFired = false;
     this.thirtySecFired = false;
     this.tenSecFired = false;
+    this.isLastRound = false;
   }
 
   /**
@@ -133,8 +143,10 @@ class WorkoutTimer {
         this.elapsedTime = 0;
         this.lastSecFired = null;
         
-        // Play start signal (coach voice / buzzer)
-        if (window.audioEngine) window.audioEngine.playStart();
+        // Play start signal (coach voice / work_start_lastround / buzzer)
+        if (window.audioEngine) {
+          window.audioEngine.playStart(this.isLastRound);
+        }
       }
     } else if (this.state === 'RUNNING') {
       const totalWorkoutMs = this.duration * 1000;

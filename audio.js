@@ -110,6 +110,7 @@ class AudioEngine {
       'work_start_2.mp3',
       'work_start_3.mp3',
       'work_start_4.mp3',
+      'work_start_lastround.mp3',
       'work_halfway_1.mp3',
       'work_30s_1.mp3',
       'work_10s_1.mp3'
@@ -130,6 +131,36 @@ class AudioEngine {
           .catch(() => {});
       }
     });
+  }
+
+  /**
+   * Play a specific coach MP3 audio file directly by filename
+   */
+  async playCoachDirect(fileName) {
+    if (this.muted || this.coach === 'arcade') return false;
+    this.resumeContext();
+    if (!this.ctx) return false;
+
+    const url = `coaches/${this.coach}/${fileName}`;
+    try {
+      let buffer = this.audioCache[url];
+      if (!buffer) {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Not found");
+        const ab = await res.arrayBuffer();
+        buffer = await this.ctx.decodeAudioData(ab);
+        this.audioCache[url] = buffer;
+      }
+
+      if (buffer) {
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.masterGain || this.ctx.destination);
+        source.start(0);
+        return true;
+      }
+    } catch (e) {}
+    return false;
   }
 
   /**
@@ -174,6 +205,15 @@ class AudioEngine {
       }
     } catch (e) {}
     return false;
+  }
+
+  /**
+   * Prep intro voice cue ("Get ready!" / "Maak je klaar!")
+   */
+  async playPrepIntro() {
+    if (this.muted || this.coach === 'arcade') return false;
+    this.resumeContext();
+    return await this.playCoachSound('prep_intro', 1);
   }
 
   /**
@@ -234,13 +274,17 @@ class AudioEngine {
   }
 
   /**
-   * Start of workout
+   * Start of workout (or last round start)
    */
-  async playStart() {
+  async playStart(isLastRound = false) {
     if (this.muted) return;
     this.resumeContext();
 
     if (this.coach !== 'arcade') {
+      if (isLastRound) {
+        const playedLast = await this.playCoachDirect('work_start_lastround.mp3');
+        if (playedLast) return;
+      }
       const played = await this.playCoachSound('work_start', 4);
       if (played) return;
     }

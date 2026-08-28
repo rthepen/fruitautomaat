@@ -1803,6 +1803,31 @@ class WorkoutApp {
   }
 
   /**
+   * Check if current exercise is the final round of the workout session
+   */
+  _isCurrentExerciseLastRound() {
+    // 1. If at or past the end of the planned schedule
+    if (this.plannedSchedule && this.plannedSchedule.length > 0 && this.currentScheduleIndex >= this.plannedSchedule.length) {
+      return true;
+    }
+
+    // 2. If remaining class time will not allow another full exercise cycle after this one
+    if (this.classEndTime) {
+      const [h, m] = this.classEndTime.split(':').map(Number);
+      const now = new Date();
+      const end = new Date(now);
+      end.setHours(h, m, 0, 0);
+      const remainingSecAfterThis = ((end - now) / 1000) - (this.countdownTime + this.activeTime);
+      const requiredNext = this.countdownTime + this.minTime;
+      if (remainingSecAfterThis < requiredNext) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Start the countdown phase
    */
   startCountdown() {
@@ -1819,9 +1844,11 @@ class WorkoutApp {
     // Load YouTube iframe NOW (during countdown) so it's already playing when workout starts
     this._loadYouTubeIframe();
 
+    const isLastRound = this._isCurrentExerciseLastRound();
 
     this.timer.start(this.activeTime, {
       countdownDuration: this.countdownTime,
+      isLastRound: isLastRound,
 
       onCountdownTick: (secs) => {
         // Just update the unified timer digits — no separate countdown element needed
