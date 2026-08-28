@@ -1223,7 +1223,8 @@ header {
   font-size: 0.78rem;
   text-transform: uppercase;
   color: #8888aa;
-  white-space: nowrap;
+  white-space: normal;
+  line-height: 1.25;
 }
 
 .input-group input[type="number"],

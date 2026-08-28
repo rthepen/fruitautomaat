@@ -26,6 +26,10 @@ class WorkoutApp {
     this.classEndTime = ''; // 'HH:MM' string
     this.volume = 2.0;     // 0–3.0 (200% default)
     this.autoPlay = false;  // Auto-spin until class ends
+    this.noRepeatExercises = false; // Exhaust pool of exercises before repeating
+    this.noRepeatMaterials = false; // Exhaust pool of materials before repeating
+    this.usedExerciseIds = new Set(); // Track used exercises in current cycle
+    this.usedMaterials = new Set();   // Track used materials in current cycle
     
     // Active selection
     this.activeMaterial = null;
@@ -113,6 +117,8 @@ class WorkoutApp {
       requireVideoInput: document.getElementById('require-video-input'),
       autoplayInput: document.getElementById('autoplay-input'),
       autoplayStopBtn: document.getElementById('autoplay-stop-btn'),
+      noRepeatExercisesInput: document.getElementById('no-repeat-exercises-input'),
+      noRepeatMaterialsInput: document.getElementById('no-repeat-materials-input'),
       databaseTree: document.getElementById('database-tree'),
       searchBar: document.getElementById('search-bar'),
       selectAllBtn: document.getElementById('select-all-btn'),
@@ -252,6 +258,8 @@ class WorkoutApp {
     this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
     this.autoPlay = this._getCookie('workout_autoplay') === 'true';
     this.requireVideo = this._getCookie('workout_require_video') !== 'false';
+    this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') === 'true';
+    this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') === 'true';
     
     this.elements.minTimeInput.value = this.minTime;
     this.elements.maxTimeInput.value = this.maxTime;
@@ -260,6 +268,12 @@ class WorkoutApp {
     this.elements.volumeInput.value = Math.round(this.volume * 100);
     this.elements.autoplayInput.checked = this.autoPlay;
     this.elements.requireVideoInput.checked = this.requireVideo;
+    if (this.elements.noRepeatExercisesInput) {
+      this.elements.noRepeatExercisesInput.checked = this.noRepeatExercises;
+    }
+    if (this.elements.noRepeatMaterialsInput) {
+      this.elements.noRepeatMaterialsInput.checked = this.noRepeatMaterials;
+    }
 
     // Disabled exercises
     const savedDisabled = this._getCookie('workout_disabled_exercises');
@@ -289,6 +303,8 @@ class WorkoutApp {
     let vol = parseInt(this.elements.volumeInput.value) || 200;
     let autoPlay = this.elements.autoplayInput.checked;
     let requireVideo = this.elements.requireVideoInput.checked;
+    let noRepeatExercises = this.elements.noRepeatExercisesInput ? this.elements.noRepeatExercisesInput.checked : false;
+    let noRepeatMaterials = this.elements.noRepeatMaterialsInput ? this.elements.noRepeatMaterialsInput.checked : false;
 
     if (min < 10) min = 10;
     if (max < min) max = min;
@@ -304,6 +320,8 @@ class WorkoutApp {
     this.volume = vol / 100;
     this.autoPlay = autoPlay;
     this.requireVideo = requireVideo;
+    this.noRepeatExercises = noRepeatExercises;
+    this.noRepeatMaterials = noRepeatMaterials;
 
     this._setCookie('workout_min_time', this.minTime);
     this._setCookie('workout_max_time', this.maxTime);
@@ -312,6 +330,16 @@ class WorkoutApp {
     this._setCookie('workout_volume', this.volume);
     this._setCookie('workout_autoplay', this.autoPlay);
     this._setCookie('workout_require_video', this.requireVideo);
+    this._setCookie('workout_no_repeat_exercises', this.noRepeatExercises);
+    this._setCookie('workout_no_repeat_materials', this.noRepeatMaterials);
+
+    // Clear tracking if toggled off
+    if (!this.noRepeatExercises) {
+      this.usedExerciseIds.clear();
+    }
+    if (!this.noRepeatMaterials) {
+      this.usedMaterials.clear();
+    }
 
     // Apply volume to audio engine
     if (window.audioEngine) {
@@ -689,6 +717,7 @@ class WorkoutApp {
     // Gather active pools
     const activeMaterials = [];
     const activeExercisesMap = {}; // material -> exercises
+    const allEnabledExercises = [];
 
     for (const materialName in this.database) {
       const enabledExs = this.database[materialName].filter(ex => {
@@ -699,23 +728,106 @@ class WorkoutApp {
       if (enabledExs.length > 0) {
         activeMaterials.push(materialName);
         activeExercisesMap[materialName] = enabledExs;
+        allEnabledExercises.push(...enabledExs);
       }
     }
 
     // Validation
-    if (activeMaterials.length === 0) {
+    if (activeMaterials.length === 0 || allEnabledExercises.length === 0) {
       alert("Kies tenminste één actieve oefening in de instellingen!");
       this.openAdmin(true);
       return;
     }
 
-    // 1. Choose winning Material
-    const chosenMaterial = activeMaterials[Math.floor(Math.random() * activeMaterials.length)];
-    
-    // 2. Choose winning Exercise for that material
-    const exercisesForMaterial = activeExercisesMap[chosenMaterial];
-    const chosenExercise = exercisesForMaterial[Math.floor(Math.random() * exercisesForMaterial.length)];
-    
+    // Prune stale IDs from tracking sets if database/filters changed
+    const activeExerciseIdSet = new Set(allEnabledExercises.map(ex => ex.id));
+    for (const id of this.usedExerciseIds) {
+      if (!activeExerciseIdSet.has(id)) {
+        this.usedExerciseIds.delete(id);
+      }
+    }
+    const activeMaterialSet = new Set(activeMaterials);
+    for (const mat of this.usedMaterials) {
+      if (!activeMaterialSet.has(mat)) {
+        this.usedMaterials.delete(mat);
+      }
+    }
+
+    let chosenMaterial = null;
+    let chosenExercise = null;
+
+    if (this.noRepeatExercises && this.noRepeatMaterials) {
+      // 1. Both options active: Materials cycle uniquely AND exercises cycle uniquely
+      // Find candidate materials: not yet used in current material-cycle AND with at least one unused exercise
+      let candidateMaterials = activeMaterials.filter(m => 
+        !this.usedMaterials.has(m) && activeExercisesMap[m].some(ex => !this.usedExerciseIds.has(ex.id))
+      );
+
+      // If no candidate materials available:
+      if (candidateMaterials.length === 0) {
+        // Check if all exercises across the entire active pool have been used
+        const allExercisesUsed = allEnabledExercises.every(ex => this.usedExerciseIds.has(ex.id));
+        if (allExercisesUsed) {
+          this.usedExerciseIds.clear();
+        }
+        // Reset materials cycle when no unused materials with fresh exercises remain
+        this.usedMaterials.clear();
+
+        // Re-evaluate materials with unused exercises
+        candidateMaterials = activeMaterials.filter(m => 
+          activeExercisesMap[m].some(ex => !this.usedExerciseIds.has(ex.id))
+        );
+
+        // Fallback if still empty
+        if (candidateMaterials.length === 0) {
+          this.usedExerciseIds.clear();
+          candidateMaterials = [...activeMaterials];
+        }
+      }
+
+      chosenMaterial = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
+      
+      let candidateExercises = activeExercisesMap[chosenMaterial].filter(ex => !this.usedExerciseIds.has(ex.id));
+      if (candidateExercises.length === 0) {
+        candidateExercises = activeExercisesMap[chosenMaterial];
+      }
+      chosenExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
+
+      this.usedMaterials.add(chosenMaterial);
+      this.usedExerciseIds.add(chosenExercise.id);
+
+    } else if (this.noRepeatExercises) {
+      // 2. Only exercises non-repeating (materials can repeat)
+      let candidateExercises = allEnabledExercises.filter(ex => !this.usedExerciseIds.has(ex.id));
+      if (candidateExercises.length === 0) {
+        this.usedExerciseIds.clear();
+        candidateExercises = [...allEnabledExercises];
+      }
+
+      chosenExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
+      chosenMaterial = chosenExercise.material_name || Object.keys(activeExercisesMap).find(m => activeExercisesMap[m].includes(chosenExercise)) || activeMaterials[0];
+      this.usedExerciseIds.add(chosenExercise.id);
+
+    } else if (this.noRepeatMaterials) {
+      // 3. Only materials non-repeating (exercises can repeat within or across cycles)
+      let candidateMaterials = activeMaterials.filter(m => !this.usedMaterials.has(m));
+      if (candidateMaterials.length === 0) {
+        this.usedMaterials.clear();
+        candidateMaterials = [...activeMaterials];
+      }
+
+      chosenMaterial = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
+      const exercisesForMaterial = activeExercisesMap[chosenMaterial];
+      chosenExercise = exercisesForMaterial[Math.floor(Math.random() * exercisesForMaterial.length)];
+      this.usedMaterials.add(chosenMaterial);
+
+    } else {
+      // 4. Pure random
+      chosenMaterial = activeMaterials[Math.floor(Math.random() * activeMaterials.length)];
+      const exercisesForMaterial = activeExercisesMap[chosenMaterial];
+      chosenExercise = exercisesForMaterial[Math.floor(Math.random() * exercisesForMaterial.length)];
+    }
+
     // 3. Choose random time step
     const activeTimes = [];
     const minStep = Math.ceil(this.minTime / 10) * 10;
@@ -1021,6 +1133,14 @@ class WorkoutApp {
       this.buildAdminTree();
       this.elements.searchBar.value = '';
       this.filterAdminTree('');
+      
+      // Sync toggle checkboxes to saved state
+      if (this.elements.noRepeatExercisesInput) {
+        this.elements.noRepeatExercisesInput.checked = this.noRepeatExercises;
+      }
+      if (this.elements.noRepeatMaterialsInput) {
+        this.elements.noRepeatMaterialsInput.checked = this.noRepeatMaterials;
+      }
       
       this.elements.adminOverlay.classList.add('open');
       this.elements.scrim.classList.add('open');
