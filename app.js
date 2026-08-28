@@ -2084,9 +2084,11 @@ class WorkoutApp {
         rel:            '0',
         iv_load_policy: '3',
         fs:             '0',
-        playsinline:    '1'
+        playsinline:    '1',
+        enablejsapi:    '1',
+        origin:         window.location.origin
       });
-      iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`;
+      iframe.src = `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
       iframe.style.display = 'block';
       
       if (thumb) {
