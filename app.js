@@ -36,7 +36,7 @@ class WorkoutApp {
     // Broken video tracking & Google Sheets logging
     this.brokenVideoExerciseIds = new Set(); // Track exercises with refused/deleted/broken YouTube videos
     this.videoValidationCache = {};          // Cache videoId -> boolean validation results
-    this.googleSheetsUrl = 'https://script.google.com/macros/s/AKfycbzjwH5TfLJEinllUn3wYlQE17uno0DdnLoBaG1FmdMeVBUE0wd5-pf07TEoOg6jj2sF/exec';
+    this.googleSheetsUrl = 'https://script.google.com/macros/s/AKfycbx6ccQx8Cobis3AF45-Gxg5GrkTCyPDn6KS32XykObIhMHD-aaWeElO2tD61UC9Ud4Vxw/exec';
     this._loggedSheetIds = new Set();        // Prevent duplicate logs in same session
     
     // Active selection
@@ -827,6 +827,43 @@ class WorkoutApp {
       console.log(`[Google Sheet] Gelogd: ${exercise.exercise_name}`);
     } catch (err) {
       console.warn('[Google Sheet] Fout bij versturen naar sheet:', err);
+    }
+  }
+
+  /**
+   * Log completed workout / class session to Google Sheets (Tabblad 2: Afgeronde Workouts)
+   */
+  async logWorkoutCompletedToGoogleSheet() {
+    const url = (this.googleSheetsUrl || '').trim();
+    if (!url) return;
+
+    const totalSeconds = this.usedHistory.reduce((acc, item) => acc + (item.time || 0), 0);
+    const materialsUsed = Array.from(new Set(this.usedHistory.map(h => h.material))).join(', ');
+
+    const payload = {
+      event_type: 'workout_completed',
+      type: 'Les Afgerond',
+      timestamp: new Date().toLocaleString('nl-NL'),
+      exercise_count: this.usedHistory.length,
+      total_work_time: totalSeconds,
+      materials_used: materialsUsed || 'Geen',
+      coach: this.coach || 'tabataman',
+      class_end_time: this.classEndTime || 'Handmatig beëindigd',
+      app: 'Fruitautomaat'
+    };
+
+    try {
+      await fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'text/plain'
+        },
+        body: JSON.stringify(payload)
+      });
+      console.log('[Google Sheet] Afgeronde workout succesvol gelogd naar tabblad Afgeronde Workouts!');
+    } catch (err) {
+      console.warn('[Google Sheet] Fout bij loggen afgeronde workout:', err);
     }
   }
 
@@ -1753,6 +1790,7 @@ class WorkoutApp {
 
     modal.classList.add('show');
     this.startConfetti();
+    this.logWorkoutCompletedToGoogleSheet();
   }
 
   hideClassFinishedModal() {
