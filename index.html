@@ -184,11 +184,33 @@
           <h3>Timer &amp; Les instellingen</h3>
           <div class="settings-grid">
             <div class="input-group">
-              <label for="class-start-input">Les start om</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                <label for="class-start-input" style="margin-bottom: 0;">Les start om</label>
+                <button type="button" id="btn-start-now" class="btn btn-cyan btn-tiny" style="padding: 2px 8px; font-size: 0.75rem; border-radius: 6px;" title="Start over 10 seconden">
+                  ⚡ Nu (over 10s)
+                </button>
+              </div>
               <input type="time" id="class-start-input" value="">
             </div>
             <div class="input-group">
-              <label for="class-end-input">Les eindigt om</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                <label for="class-end-input" style="margin-bottom: 0;">Les eindigt om</label>
+                <select id="class-duration-select" style="padding: 2px 6px; font-size: 0.72rem; width: auto; background: #161726; color: var(--neon-cyan); border: 1px solid rgba(0, 255, 255, 0.4); border-radius: 6px;">
+                  <option value="">Of kies duur...</option>
+                  <option value="5">+ 5 min</option>
+                  <option value="10">+ 10 min</option>
+                  <option value="15">+ 15 min</option>
+                  <option value="20">+ 20 min</option>
+                  <option value="25">+ 25 min</option>
+                  <option value="30">+ 30 min</option>
+                  <option value="35">+ 35 min</option>
+                  <option value="40">+ 40 min</option>
+                  <option value="45">+ 45 min</option>
+                  <option value="50">+ 50 min</option>
+                  <option value="55">+ 55 min</option>
+                  <option value="60">+ 60 min (1 uur)</option>
+                </select>
+              </div>
               <input type="time" id="class-end-input" value="">
             </div>
             <div class="input-group">

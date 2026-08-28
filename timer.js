@@ -51,8 +51,8 @@ class WorkoutTimer {
     
     if (this.countdownDuration > 0) {
       this.setState('COUNTDOWN');
-      // Play prep intro voice cue ("Get ready!" / "Maak je klaar!")
-      if (window.audioEngine) {
+      // Play prep intro voice cue ("Get ready!" / "Maak je klaar!") ONLY for the first exercise
+      if (callbacks.playPrepIntro && window.audioEngine) {
         window.audioEngine.playPrepIntro();
       }
     } else {

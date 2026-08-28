@@ -38,6 +38,7 @@ class WorkoutApp {
     this.plannedSchedule = [];        // Pre-generated workout sequence: [{ id, exercise, material, time, status }]
     this.currentScheduleIndex = 0;    // Index of the next exercise to spin
     this._isSessionActive = false;    // Whether class is actively running
+    this._exactStartTimestamp = null; // Timestamp for precise 10s countdown start
 
     // Secret Planner state
     this._logoClicks = 0;
@@ -141,7 +142,9 @@ class WorkoutApp {
       adminOverlay: document.getElementById('admin-overlay'),
       scrim: document.getElementById('scrim'),
       classStartInput: document.getElementById('class-start-input'),
+      btnStartNow: document.getElementById('btn-start-now'),
       classEndInput: document.getElementById('class-end-input'),
+      classDurationSelect: document.getElementById('class-duration-select'),
       minTimeInput: document.getElementById('min-time-input'),
       maxTimeInput: document.getElementById('max-time-input'),
       countdownTimeInput: document.getElementById('countdown-time-input'),
@@ -252,6 +255,31 @@ class WorkoutApp {
       this.generatePlannedSchedule(true);
       this.openAdmin(false);
     });
+
+    // Start Now (10s countdown) button
+    if (this.elements.btnStartNow) {
+      this.elements.btnStartNow.addEventListener('click', () => this.setStartNowIn10Seconds());
+    }
+
+    // Class duration dropdown
+    if (this.elements.classDurationSelect) {
+      this.elements.classDurationSelect.addEventListener('change', (e) => {
+        const mins = parseInt(e.target.value);
+        if (mins && mins > 0) {
+          this.calculateEndTimeFromDuration(mins);
+        }
+      });
+    }
+
+    // Recalculate end time if start time changes and a duration is selected
+    if (this.elements.classStartInput) {
+      this.elements.classStartInput.addEventListener('change', () => {
+        const mins = parseInt(this.elements.classDurationSelect?.value);
+        if (mins && mins > 0) {
+          this.calculateEndTimeFromDuration(mins);
+        }
+      });
+    }
 
     // Video requirement toggle
     this.elements.requireVideoInput.addEventListener('change', (e) => {
@@ -1044,6 +1072,54 @@ class WorkoutApp {
   }
 
   /**
+   * Quick start: set start time to 10 seconds from now and begin 10s countdown
+   */
+  setStartNowIn10Seconds() {
+    const target = new Date(Date.now() + 10000);
+    const hh = String(target.getHours()).padStart(2, '0');
+    const mm = String(target.getMinutes()).padStart(2, '0');
+    this.classStartTime = `${hh}:${mm}`;
+    if (this.elements.classStartInput) {
+      this.elements.classStartInput.value = this.classStartTime;
+    }
+    this._setCookie('workout_class_start', this.classStartTime);
+    
+    // If duration dropdown has a chosen value, recompute end time
+    const mins = parseInt(this.elements.classDurationSelect?.value);
+    if (mins && mins > 0) {
+      this.calculateEndTimeFromDuration(mins);
+    }
+    
+    this._isSessionActive = false;
+    this._exactStartTimestamp = target.getTime();
+    this.generatePlannedSchedule(true);
+    this.startClassClock();
+    this.openAdmin(false);
+  }
+
+  /**
+   * Calculate and set classEndTime based on selected minutes duration
+   */
+  calculateEndTimeFromDuration(minutes) {
+    let baseDate = new Date();
+    const startVal = this.elements.classStartInput ? this.elements.classStartInput.value : this.classStartTime;
+    if (startVal) {
+      const [sH, sM] = startVal.split(':').map(Number);
+      baseDate.setHours(sH, sM, 0, 0);
+    }
+    const endDate = new Date(baseDate.getTime() + minutes * 60000);
+    const endHH = String(endDate.getHours()).padStart(2, '0');
+    const endMM = String(endDate.getMinutes()).padStart(2, '0');
+    this.classEndTime = `${endHH}:${endMM}`;
+    if (this.elements.classEndInput) {
+      this.elements.classEndInput.value = this.classEndTime;
+    }
+    this._setCookie('workout_class_end', this.classEndTime);
+    this.generatePlannedSchedule(true);
+    this.startClassClock();
+  }
+
+  /**
    * Starts the live header clock and schedule countdown ticker
    */
   startClassClock() {
@@ -1057,8 +1133,26 @@ class WorkoutApp {
         this.elements.headerCurrentTime.textContent = `${hh}:${mm}:${ss}`;
       }
       
-      // Auto-start check when start time is configured and session hasn't started yet
-      if (this.classStartTime && !this._isSessionActive) {
+      // Auto-start check when precision timestamp or start time is configured
+      if (this._exactStartTimestamp && !this._isSessionActive) {
+        const diffMs = this._exactStartTimestamp - now.getTime();
+        if (diffMs <= 0) {
+          this._exactStartTimestamp = null;
+          this._isSessionActive = true;
+          this.handleSpin();
+        } else {
+          const diffSec = Math.ceil(diffMs / 1000);
+          if (this.elements.headerClassEnd) {
+            this.elements.headerClassEnd.textContent = `LES START: ${this.classStartTime || 'NU'}`;
+            this.elements.headerClassEnd.style.display = '';
+          }
+          if (this.elements.headerRemaining) {
+            this.elements.headerRemaining.textContent = `START OVER ${diffSec}s`;
+            this.elements.headerRemaining.className = 'header-clock-remaining urgent';
+          }
+          return;
+        }
+      } else if (this.classStartTime && !this._isSessionActive) {
         const [startH, startM] = this.classStartTime.split(':').map(Number);
         const startDate = new Date(now);
         startDate.setHours(startH, startM, 0, 0);
@@ -1844,10 +1938,12 @@ class WorkoutApp {
     // Load YouTube iframe NOW (during countdown) so it's already playing when workout starts
     this._loadYouTubeIframe();
 
+    const isFirstRound = (this.currentScheduleIndex <= 1 && this.usedHistory.length <= 1);
     const isLastRound = this._isCurrentExerciseLastRound();
 
     this.timer.start(this.activeTime, {
       countdownDuration: this.countdownTime,
+      playPrepIntro: isFirstRound,
       isLastRound: isLastRound,
 
       onCountdownTick: (secs) => {
