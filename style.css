@@ -1231,15 +1231,15 @@ header {
 
 /* Always-visible technique thumbnail preview box */
 .instruction-thumb-preview {
-  flex: 0 0 160px;
-  max-width: 200px;
+  flex: 0 0 clamp(240px, 26vw, 360px);
+  max-width: 400px;
   aspect-ratio: 16/9;
-  border-radius: 10px;
-  border: 2px solid #2e2e42;
+  border-radius: 14px;
+  border: 3px solid #2e2e42;
   background: #09090e;
   overflow: hidden;
   position: relative;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1248,8 +1248,8 @@ header {
 
 .instruction-thumb-preview:hover {
   border-color: var(--neon-cyan);
-  box-shadow: 0 0 15px rgba(0, 255, 255, 0.35);
-  transform: scale(1.04);
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.4);
+  transform: scale(1.03);
 }
 
 .instruction-thumb-img {
@@ -1259,32 +1259,15 @@ header {
   display: block;
 }
 
-.instruction-thumb-label {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(0, 0, 0, 0.78);
-  backdrop-filter: blur(4px);
-  color: var(--neon-cyan);
-  font-size: 0.68rem;
-  font-family: var(--font-display);
-  letter-spacing: 1px;
-  text-align: center;
-  padding: 3px 4px;
-  text-transform: uppercase;
-  pointer-events: none;
-}
-
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .instruction-content-row {
     flex-direction: column;
-    gap: 0.8rem;
+    gap: 1rem;
   }
   .instruction-thumb-preview {
     flex: none;
     width: 100%;
-    max-width: 240px;
+    max-width: 100%;
   }
 }
 
