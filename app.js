@@ -432,33 +432,18 @@ class WorkoutApp {
     this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
     this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
     
-    // Default start time (over 2 min) and end time (over 25 min) on initial load or if expired
+    // Always start a brand new training session on page reload
     const now = new Date();
-    let needsDefaultTimes = false;
-
-    if (!this.classStartTime || !this.classEndTime) {
-      needsDefaultTimes = true;
-    } else {
-      const [endH, endM] = this.classEndTime.split(':').map(Number);
-      const savedEndDate = new Date(now);
-      savedEndDate.setHours(endH, endM, 0, 0);
-      if (now >= savedEndDate) {
-        needsDefaultTimes = true;
-      }
-    }
-
-    if (needsDefaultTimes) {
-      const startDate = new Date(now.getTime() + 2 * 60000);
-      const endDate = new Date(now.getTime() + 25 * 60000);
-      const sH = String(startDate.getHours()).padStart(2, '0');
-      const sM = String(startDate.getMinutes()).padStart(2, '0');
-      const eH = String(endDate.getHours()).padStart(2, '0');
-      const eM = String(endDate.getMinutes()).padStart(2, '0');
-      this.classStartTime = `${sH}:${sM}`;
-      this.classEndTime = `${eH}:${eM}`;
-      this._setCookie('workout_class_start', this.classStartTime);
-      this._setCookie('workout_class_end', this.classEndTime);
-    }
+    const startDate = new Date(now.getTime() + 2 * 60000);
+    const endDate = new Date(now.getTime() + 25 * 60000);
+    const sH = String(startDate.getHours()).padStart(2, '0');
+    const sM = String(startDate.getMinutes()).padStart(2, '0');
+    const eH = String(endDate.getHours()).padStart(2, '0');
+    const eM = String(endDate.getMinutes()).padStart(2, '0');
+    this.classStartTime = `${sH}:${sM}`;
+    this.classEndTime = `${eH}:${eM}`;
+    this._setCookie('workout_class_start', this.classStartTime);
+    this._setCookie('workout_class_end', this.classEndTime);
 
     if (this.elements.classStartInput) {
       this.elements.classStartInput.value = this.classStartTime;
@@ -485,17 +470,17 @@ class WorkoutApp {
       window.audioEngine.setCoach(this.coach);
     }
 
-    // Load used pool history from localStorage
+    // Always reset session history on page load so a fresh workout begins
+    this.usedHistory = [];
+    this.usedExerciseIds = new Set();
+    this.usedMaterials = new Set();
+    this._sessionExerciseCount = 0;
+    this.currentScheduleIndex = 0;
+    this._isSessionActive = false;
+    this._exactStartTimestamp = null;
     try {
-      const savedHistory = localStorage.getItem('workout_used_history');
-      if (savedHistory) {
-        this.usedHistory = JSON.parse(savedHistory) || [];
-        this.usedExerciseIds = new Set(this.usedHistory.map(h => h.id));
-        this.usedMaterials = new Set(this.usedHistory.map(h => h.material));
-      }
-    } catch (e) {
-      this.usedHistory = [];
-    }
+      localStorage.removeItem('workout_used_history');
+    } catch (e) {}
 
     // Disabled exercises
     const savedDisabled = this._getCookie('workout_disabled_exercises');
