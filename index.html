@@ -261,6 +261,23 @@
             <!-- Populated dynamically via JS -->
           </div>
         </section>
+        <section class="admin-section">
+          <div class="used-history-header">
+            <h3>Niet-werkende video's</h3>
+            <div style="display:flex; gap:0.4rem;">
+              <button id="scan-videos-btn" class="btn btn-cyan btn-tiny" title="Scan alle video's in de database op geldigheid">
+                🔍 Scan video's
+              </button>
+              <button id="reset-broken-videos-btn" class="btn btn-pink btn-tiny" title="Wis lijst met niet-werkende video's">
+                🔄 Reset lijst
+              </button>
+            </div>
+          </div>
+          <div class="used-history-stats" id="broken-videos-stats"></div>
+          <div class="used-history-list" id="broken-videos-list">
+            <!-- Populated dynamically via JS -->
+          </div>
+        </section>
         <section class="admin-section" style="flex: 1; display: flex; flex-direction: column;">
           <h3>Materialen & Oefeningen</h3>
           

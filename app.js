@@ -33,6 +33,10 @@ class WorkoutApp {
     this.usedMaterials = new Set();   // Track used materials in current cycle
     this.usedHistory = [];            // Chronological array of used exercises in current cycle
     
+    // Broken video tracking
+    this.brokenVideoExerciseIds = new Set(); // Track exercises with refused/deleted/broken YouTube videos
+    this.videoValidationCache = {};          // Cache videoId -> boolean validation results
+    
     // Active selection
     this.activeMaterial = null;
     this.activeExercise = null;
@@ -56,6 +60,7 @@ class WorkoutApp {
    * Application Initialization
    */
   async init() {
+    window.workoutApp = this;
     this.cacheElements();
     this.loadSettings();
     this.bindEvents();
@@ -75,6 +80,7 @@ class WorkoutApp {
       this.buildAdminTree();
       this.updateReelsPool();
       this.renderUsedHistory();
+      this.renderBrokenVideosList();
       this.showLoading(false);
       
       // Transition to Idle slot machine view
@@ -126,6 +132,10 @@ class WorkoutApp {
       usedHistoryList: document.getElementById('used-history-list'),
       usedHistoryStats: document.getElementById('used-history-stats'),
       resetHistoryBtn: document.getElementById('reset-history-btn'),
+      scanVideosBtn: document.getElementById('scan-videos-btn'),
+      resetBrokenVideosBtn: document.getElementById('reset-broken-videos-btn'),
+      brokenVideosStats: document.getElementById('broken-videos-stats'),
+      brokenVideosList: document.getElementById('broken-videos-list'),
       databaseTree: document.getElementById('database-tree'),
       searchBar: document.getElementById('search-bar'),
       selectAllBtn: document.getElementById('select-all-btn'),
@@ -224,6 +234,14 @@ class WorkoutApp {
     // Reset Pool History button
     if (this.elements.resetHistoryBtn) {
       this.elements.resetHistoryBtn.addEventListener('click', () => this.resetUsedHistory());
+    }
+
+    // Video check and reset buttons
+    if (this.elements.scanVideosBtn) {
+      this.elements.scanVideosBtn.addEventListener('click', () => this.scanAllVideos());
+    }
+    if (this.elements.resetBrokenVideosBtn) {
+      this.elements.resetBrokenVideosBtn.addEventListener('click', () => this.resetBrokenVideos());
     }
 
     // Active Workout Controls
@@ -347,6 +365,16 @@ class WorkoutApp {
       }
     } else {
       this.disabledExerciseIds = new Set();
+    }
+
+    // Broken videos list from localStorage
+    try {
+      const savedBroken = localStorage.getItem('workout_broken_videos');
+      if (savedBroken) {
+        this.brokenVideoExerciseIds = new Set(JSON.parse(savedBroken));
+      }
+    } catch (e) {
+      this.brokenVideoExerciseIds = new Set();
     }
 
     // Audio status sync
@@ -484,6 +512,213 @@ class WorkoutApp {
         </div>
       `).join('');
       this.elements.usedHistoryList.innerHTML = itemsHtml;
+    }
+  }
+
+  /**
+   * Robust YouTube ID extractor from any URL format
+   */
+  _extractYouTubeId(url) {
+    if (!url || typeof url !== 'string') return '';
+    const trimmed = url.trim();
+    const regExp = /(?:youtube(?:-nocookie)?\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
+    const match = trimmed.match(regExp);
+    return match ? match[1] : '';
+  }
+
+  /**
+   * Helper to check if an exercise has a valid working YouTube video
+   */
+  _hasValidWorkingVideo(ex) {
+    if (!ex) return false;
+    const url = (ex.video_search_url || '').trim();
+    if (!url) return false;
+    if (this.brokenVideoExerciseIds.has(ex.id)) return false;
+    const vId = this._extractYouTubeId(url);
+    return !!vId;
+  }
+
+  /**
+   * Asynchronously validate whether a YouTube video ID actually exists & is reachable
+   */
+  validateYouTubeVideo(videoId) {
+    if (!videoId || videoId.length !== 11) return Promise.resolve(false);
+    if (this.videoValidationCache[videoId] !== undefined) {
+      return Promise.resolve(this.videoValidationCache[videoId]);
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const img = new Image();
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          this.videoValidationCache[videoId] = true; // graceful fallback on timeout
+          resolve(true);
+        }
+      }, 2500);
+
+      img.onload = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          // YouTube returns 120x90 image for deleted/private videos, or 320x180 for valid videos
+          const isValid = img.naturalWidth && img.naturalWidth > 120;
+          this.videoValidationCache[videoId] = isValid;
+          resolve(isValid);
+        }
+      };
+
+      img.onerror = () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          this.videoValidationCache[videoId] = false;
+          resolve(false);
+        }
+      };
+
+      img.src = `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    });
+  }
+
+  /**
+   * Save broken videos list to localStorage
+   */
+  _saveBrokenVideos() {
+    try {
+      localStorage.setItem('workout_broken_videos', JSON.stringify(Array.from(this.brokenVideoExerciseIds)));
+    } catch (e) {}
+    this.renderBrokenVideosList();
+  }
+
+  /**
+   * Clear broken videos list
+   */
+  resetBrokenVideos() {
+    this.brokenVideoExerciseIds.clear();
+    this.videoValidationCache = {};
+    this._saveBrokenVideos();
+    this.buildAdminTree();
+    this.updateReelsPool();
+  }
+
+  /**
+   * Scan entire database for broken/refused YouTube videos
+   */
+  async scanAllVideos() {
+    if (!this.elements.scanVideosBtn) return;
+    this.elements.scanVideosBtn.disabled = true;
+    this.elements.scanVideosBtn.textContent = "⏳ Scannen...";
+
+    const allExercises = [];
+    for (const mat in this.database) {
+      for (const ex of this.database[mat]) {
+        if (ex.video_search_url && ex.video_search_url.trim()) {
+          allExercises.push(ex);
+        }
+      }
+    }
+
+    let checked = 0;
+    for (const ex of allExercises) {
+      const vId = this._extractYouTubeId(ex.video_search_url);
+      if (!vId) {
+        this.brokenVideoExerciseIds.add(ex.id);
+      } else {
+        const isValid = await this.validateYouTubeVideo(vId);
+        if (!isValid) {
+          this.brokenVideoExerciseIds.add(ex.id);
+        } else {
+          this.brokenVideoExerciseIds.delete(ex.id);
+        }
+      }
+      checked++;
+      if (this.elements.brokenVideosStats) {
+        this.elements.brokenVideosStats.innerHTML = `<span class="used-history-badge">Scannen: ${checked} / ${allExercises.length} video's gecontroleerd</span>`;
+      }
+    }
+
+    this._saveBrokenVideos();
+    this.buildAdminTree();
+    this.updateReelsPool();
+
+    this.elements.scanVideosBtn.disabled = false;
+    this.elements.scanVideosBtn.textContent = "🔍 Scan video's";
+  }
+
+  /**
+   * Render list of broken videos in admin drawer
+   */
+  renderBrokenVideosList() {
+    if (!this.elements.brokenVideosList || !this.elements.brokenVideosStats) return;
+
+    const brokenExercises = [];
+    for (const mat in this.database) {
+      for (const ex of this.database[mat]) {
+        if (this.brokenVideoExerciseIds.has(ex.id)) {
+          brokenExercises.push({ ...ex, material: mat });
+        }
+      }
+    }
+
+    if (brokenExercises.length === 0) {
+      this.elements.brokenVideosStats.innerHTML = `
+        <span class="used-history-badge" style="background:rgba(57,255,20,0.12); border-color:rgba(57,255,20,0.35); color:#39ff14;">
+          ✓ Alle video's werken naar behoren (0 niet-werkend)
+        </span>
+      `;
+      this.elements.brokenVideosList.innerHTML = `
+        <div class="used-history-empty">Geen niet-werkende video's gedetecteerd.</div>
+      `;
+    } else {
+      this.elements.brokenVideosStats.innerHTML = `
+        <span class="used-history-badge" style="background:rgba(255,0,127,0.15); border-color:rgba(255,0,127,0.4); color:var(--neon-pink);">
+          ⚠️ ${brokenExercises.length} niet-werkende video('s) uitgesloten van pool
+        </span>
+      `;
+      const html = brokenExercises.map(ex => `
+        <div class="used-history-item">
+          <div class="used-history-item-left">
+            <span class="used-history-item-name">${ex.exercise_name}</span>
+            <span class="used-history-item-material">${ex.material} • Verbinding geweigerd</span>
+          </div>
+          <button class="btn btn-tiny btn-cyan" onclick="window.workoutApp.recheckVideo('${ex.id}')" title="Opnieuw controleren">
+            🔄 Test
+          </button>
+        </div>
+      `).join('');
+      this.elements.brokenVideosList.innerHTML = html;
+    }
+  }
+
+  /**
+   * Recheck a single broken video
+   */
+  async recheckVideo(exerciseId) {
+    let targetEx = null;
+    for (const mat in this.database) {
+      targetEx = this.database[mat].find(e => e.id === exerciseId);
+      if (targetEx) break;
+    }
+    if (!targetEx) return;
+
+    const vId = this._extractYouTubeId(targetEx.video_search_url);
+    if (!vId) {
+      alert(`Geen geldig YouTube ID gevonden voor ${targetEx.exercise_name}.`);
+      return;
+    }
+
+    delete this.videoValidationCache[vId];
+    const isValid = await this.validateYouTubeVideo(vId);
+    if (isValid) {
+      this.brokenVideoExerciseIds.delete(exerciseId);
+      this._saveBrokenVideos();
+      this.buildAdminTree();
+      this.updateReelsPool();
+      alert(`Video voor "${targetEx.exercise_name}" werkt correct en is weer toegevoegd aan de pool!`);
+    } else {
+      alert(`Video voor "${targetEx.exercise_name}" kan nog steeds niet worden geladen.`);
     }
   }
 
@@ -823,7 +1058,7 @@ class WorkoutApp {
     for (const materialName in this.database) {
       const enabledExs = this.database[materialName].filter(ex => {
         if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !(ex.video_search_url || '').trim()) return false;
+        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
         return true;
       });
       if (enabledExs.length > 0) {
@@ -854,7 +1089,7 @@ class WorkoutApp {
   /**
    * Handle click on SPIN button
    */
-  handleSpin() {
+  async handleSpin() {
     // If class end time has been reached or remaining time is insufficient for full exercise cycle
     if (this._isClassFinished()) {
       if (window.audioEngine) window.audioEngine.playFinish();
@@ -870,7 +1105,7 @@ class WorkoutApp {
     for (const materialName in this.database) {
       const enabledExs = this.database[materialName].filter(ex => {
         if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !(ex.video_search_url || '').trim()) return false;
+        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
         return true;
       });
       if (enabledExs.length > 0) {
@@ -882,7 +1117,7 @@ class WorkoutApp {
 
     // Validation
     if (activeMaterials.length === 0 || allEnabledExercises.length === 0) {
-      alert("Kies tenminste één actieve oefening in de instellingen!");
+      alert("Kies tenminste één actieve oefening (met werkende video) in de instellingen!");
       this.openAdmin(true);
       return;
     }
@@ -943,9 +1178,6 @@ class WorkoutApp {
       }
       chosenExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
 
-      this.usedMaterials.add(chosenMaterial);
-      this.usedExerciseIds.add(chosenExercise.id);
-
     } else if (this.noRepeatExercises) {
       // 2. Only exercises non-repeating (materials can repeat)
       let candidateExercises = allEnabledExercises.filter(ex => !this.usedExerciseIds.has(ex.id));
@@ -957,7 +1189,6 @@ class WorkoutApp {
 
       chosenExercise = candidateExercises[Math.floor(Math.random() * candidateExercises.length)];
       chosenMaterial = chosenExercise.material_name || Object.keys(activeExercisesMap).find(m => activeExercisesMap[m].includes(chosenExercise)) || activeMaterials[0];
-      this.usedExerciseIds.add(chosenExercise.id);
 
     } else if (this.noRepeatMaterials) {
       // 3. Only materials non-repeating (exercises can repeat within or across cycles)
@@ -970,13 +1201,41 @@ class WorkoutApp {
       chosenMaterial = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
       const exercisesForMaterial = activeExercisesMap[chosenMaterial];
       chosenExercise = exercisesForMaterial[Math.floor(Math.random() * exercisesForMaterial.length)];
-      this.usedMaterials.add(chosenMaterial);
 
     } else {
       // 4. Pure random
       chosenMaterial = activeMaterials[Math.floor(Math.random() * activeMaterials.length)];
       const exercisesForMaterial = activeExercisesMap[chosenMaterial];
       chosenExercise = exercisesForMaterial[Math.floor(Math.random() * exercisesForMaterial.length)];
+    }
+
+    // Background validation during spin for chosen exercise video
+    const videoId = this._extractYouTubeId(chosenExercise.video_search_url);
+    if (videoId) {
+      const isValid = await this.validateYouTubeVideo(videoId);
+      if (!isValid) {
+        // Video is refused / broken! Mark in broken list
+        this.brokenVideoExerciseIds.add(chosenExercise.id);
+        this._saveBrokenVideos();
+        // If requireVideo is on, pick an alternative working exercise
+        if (this.requireVideo) {
+          const workingAlternatives = allEnabledExercises.filter(ex => 
+            ex.id !== chosenExercise.id && this._hasValidWorkingVideo(ex)
+          );
+          if (workingAlternatives.length > 0) {
+            chosenExercise = workingAlternatives[Math.floor(Math.random() * workingAlternatives.length)];
+            chosenMaterial = chosenExercise.material_name || chosenMaterial;
+          }
+        }
+      }
+    }
+
+    // Finalize recording for non-repeat pools
+    if (this.noRepeatMaterials) {
+      this.usedMaterials.add(chosenMaterial);
+    }
+    if (this.noRepeatExercises) {
+      this.usedExerciseIds.add(chosenExercise.id);
     }
 
     // 3. Choose random time step
@@ -1119,10 +1378,13 @@ class WorkoutApp {
     const fallback = this.elements.videoFallbackImg;
     const slot = this.elements.videoSlot;
 
-    const embedUrl = (this.activeExercise.video_search_url || '').trim();
+    const rawUrl = (this.activeExercise.video_search_url || '').trim();
+    const videoId = this._extractYouTubeId(rawUrl);
+    const thumb = (this.activeExercise.thumbnail || '').trim() || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
 
-    if (embedUrl) {
-      const videoId = embedUrl.split('/embed/')[1]?.split('?')[0] || '';
+    const isBroken = this.brokenVideoExerciseIds.has(this.activeExercise.id);
+
+    if (videoId && !isBroken) {
       const params = new URLSearchParams({
         autoplay:       '1',
         mute:           '1',
@@ -1132,14 +1394,12 @@ class WorkoutApp {
         modestbranding: '1',
         rel:            '0',
         iv_load_policy: '3',
-        fs:             '0'
+        fs:             '0',
+        playsinline:    '1'
       });
-      const baseUrl = embedUrl.split('?')[0];
-      iframe.src = `${baseUrl}?${params.toString()}`;
+      iframe.src = `https://www.youtube-nocookie.com/embed/${videoId}?${params.toString()}`;
       iframe.style.display = 'block';
       
-      // Always show thumbnail as background layer behind the iframe
-      const thumb = (this.activeExercise.thumbnail || '').trim();
       if (thumb) {
         fallback.src = thumb;
         fallback.style.display = 'block';
@@ -1153,7 +1413,6 @@ class WorkoutApp {
     } else {
       iframe.src = '';
       iframe.style.display = 'none';
-      const thumb = (this.activeExercise.thumbnail || '').trim();
       if (thumb) {
         fallback.src = thumb;
         fallback.style.display = 'block';
@@ -1423,6 +1682,9 @@ class WorkoutApp {
       
       // Render used history list & stats
       this.renderUsedHistory();
+      
+      // Render broken videos list & stats
+      this.renderBrokenVideosList();
       
       this.elements.adminOverlay.classList.add('open');
       this.elements.scrim.classList.add('open');
