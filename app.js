@@ -88,6 +88,11 @@ class WorkoutApp {
       // Transition to Idle slot machine view
       this.switchView('idle');
       this.setStandbyState();
+
+      // Automatically scan all videos in background without requiring any user clicks
+      setTimeout(() => {
+        this.autoBackgroundScanVideos();
+      }, 2000);
     } catch (err) {
       console.error("Failed to initialize database:", err);
       alert("Fout bij inladen workout database. Controleer of de app via een webserver (HTTP) draait.");
@@ -626,7 +631,48 @@ class WorkoutApp {
   }
 
   /**
-   * Scan entire database for broken/refused YouTube videos
+   * Automatic background scan of all exercises without blocking the UI
+   */
+  async autoBackgroundScanVideos() {
+    const allExercises = [];
+    for (const mat in this.database) {
+      for (const ex of this.database[mat]) {
+        if (ex.video_search_url && ex.video_search_url.trim()) {
+          allExercises.push(ex);
+        }
+      }
+    }
+
+    let hasNewBroken = false;
+    for (const ex of allExercises) {
+      const vId = this._extractYouTubeId(ex.video_search_url);
+      if (!vId) {
+        if (!this.brokenVideoExerciseIds.has(ex.id)) {
+          this.brokenVideoExerciseIds.add(ex.id);
+          this.logBrokenVideoToGoogleSheet(ex, 'Geen geldig YouTube ID (Automatische scan)');
+          hasNewBroken = true;
+        }
+      } else {
+        const isValid = await this.validateYouTubeVideo(vId);
+        if (!isValid) {
+          if (!this.brokenVideoExerciseIds.has(ex.id)) {
+            this.brokenVideoExerciseIds.add(ex.id);
+            this.logBrokenVideoToGoogleSheet(ex, 'Verbinding geweigerd / onbereikbaar (Automatische scan)');
+            hasNewBroken = true;
+          }
+        }
+      }
+    }
+
+    if (hasNewBroken) {
+      this._saveBrokenVideos();
+      this.buildAdminTree();
+      this.updateReelsPool();
+    }
+  }
+
+  /**
+   * Scan entire database for broken/refused YouTube videos (Manual button)
    */
   async scanAllVideos() {
     if (!this.elements.scanVideosBtn) return;
