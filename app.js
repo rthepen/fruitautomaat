@@ -157,7 +157,15 @@ class WorkoutApp {
       btnReset: document.getElementById('btn-reset'),
 
       // Finished flash overlay
-      finishedExercise: document.getElementById('finished-exercise-text')
+      finishedExercise: document.getElementById('finished-exercise-text'),
+
+      // Grand End-of-Class Celebration Overlay
+      classFinishedOverlay: document.getElementById('class-finished-overlay'),
+      classStatExercises: document.getElementById('class-stat-exercises'),
+      classStatTime: document.getElementById('class-stat-time'),
+      classStatMaterials: document.getElementById('class-stat-materials'),
+      classFinishedNewBtn: document.getElementById('class-finished-new-btn'),
+      classFinishedCloseBtn: document.getElementById('class-finished-close-btn')
     };
   }
 
@@ -167,6 +175,14 @@ class WorkoutApp {
   bindEvents() {
     // Spin Button
     this.elements.spinBtn.addEventListener('click', () => this.handleSpin());
+    
+    // Class Finished Modal buttons
+    if (this.elements.classFinishedNewBtn) {
+      this.elements.classFinishedNewBtn.addEventListener('click', () => this.handleStartNewClass());
+    }
+    if (this.elements.classFinishedCloseBtn) {
+      this.elements.classFinishedCloseBtn.addEventListener('click', () => this.hideClassFinishedModal());
+    }
     
     // Admin Toggle
     this.elements.adminOpenBtn.addEventListener('click', () => this.openAdmin(true));
@@ -486,15 +502,24 @@ class WorkoutApp {
   }
 
   /**
-   * Check if class end time has passed or is not set
+   * Check if class end time has passed or if there is not enough time remaining
+   * for another full exercise cycle (countdown + max working time).
    */
-  _classIsOver() {
+  _isClassFinished() {
     if (!this.classEndTime) return false;
     const [h, m] = this.classEndTime.split(':').map(Number);
     const now = new Date();
     const end = new Date(now);
     end.setHours(h, m, 0, 0);
-    return now >= end;
+    const remainingSec = (end - now) / 1000;
+    
+    // Required seconds for a full next exercise cycle: countdown + max working time
+    const requiredSec = this.countdownTime + this.maxTime;
+    return remainingSec < requiredSec;
+  }
+
+  _classIsOver() {
+    return this._isClassFinished();
   }
 
   /**
@@ -830,6 +855,13 @@ class WorkoutApp {
    * Handle click on SPIN button
    */
   handleSpin() {
+    // If class end time has been reached or remaining time is insufficient for full exercise cycle
+    if (this._isClassFinished()) {
+      if (window.audioEngine) window.audioEngine.playFinish();
+      this.showClassFinishedModal();
+      return;
+    }
+
     // Gather active pools
     const activeMaterials = [];
     const activeExercisesMap = {}; // material -> exercises
@@ -1212,29 +1244,144 @@ class WorkoutApp {
   handleWorkoutComplete() {
     this._stopYouTubeIframe();
 
-    // Show flash overlay
-    const overlay = this.elements.finishedOverlay;
-    this.elements.finishedExercise.textContent = this.activeExercise.exercise_name;
-    overlay.classList.add('show');
+    const isClassFinished = this._isClassFinished();
 
-    // Hide after 3 seconds, then return to idle or auto-spin
-    setTimeout(() => {
-      overlay.classList.remove('show');
+    if (isClassFinished) {
+      // 🏆 END OF TRAINING: Play finish audio & show grand celebration modal!
+      if (window.audioEngine) window.audioEngine.playFinish();
+      this.autoPlay = false;
+      this.updateAutoPlayUI();
+      this.showClassFinishedModal();
+    } else {
+      // 🔄 NORMAL EXERCISE SWITCH: Play rest_switch_start audio & show 3-second flash overlay
+      if (window.audioEngine) window.audioEngine.playSwitch();
 
-      this.elements.spinBtn.disabled = false;
-      this.elements.adminOpenBtn.disabled = false;
+      const overlay = this.elements.finishedOverlay;
+      const exName = this.activeExercise ? this.activeExercise.exercise_name : 'Oefening';
+      this.elements.finishedExercise.textContent = `${exName} afgerond. Wissel naar volgende!`;
+      overlay.classList.add('show');
 
-      if (this.autoPlay && !this._classIsOver()) {
-        // Auto-spin after brief pause on idle
-        this.switchView('idle');
-        setTimeout(() => {
-          if (this.autoPlay && !this._classIsOver()) this.handleSpin();
-        }, 900);
-      } else {
-        this.switchView('idle');
-        this.setStandbyState();
-      }
-    }, 3000);
+      // Hide after 3 seconds, then return to idle or auto-spin
+      setTimeout(() => {
+        overlay.classList.remove('show');
+
+        this.elements.spinBtn.disabled = false;
+        this.elements.adminOpenBtn.disabled = false;
+
+        if (this.autoPlay && !this._isClassFinished()) {
+          // Auto-spin after brief pause on idle
+          this.switchView('idle');
+          setTimeout(() => {
+            if (this.autoPlay && !this._isClassFinished()) this.handleSpin();
+          }, 900);
+        } else {
+          this.switchView('idle');
+          this.setStandbyState();
+        }
+      }, 3000);
+    }
+  }
+
+  /**
+   * Grand End-of-Class Celebration Modal & Confetti
+   */
+  showClassFinishedModal() {
+    const modal = this.elements.classFinishedOverlay;
+    if (!modal) return;
+
+    // Calculate session totals
+    const totalExercises = this.usedHistory.length;
+    const totalSeconds = this.usedHistory.reduce((acc, item) => acc + (item.time || 0), 0);
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    const timeFormatted = mins > 0 ? `${mins}m ${secs > 0 ? secs + 's' : ''}` : `${secs}s`;
+    const uniqueMaterials = new Set(this.usedHistory.map(h => h.material)).size;
+
+    if (this.elements.classStatExercises) this.elements.classStatExercises.textContent = totalExercises;
+    if (this.elements.classStatTime) this.elements.classStatTime.textContent = timeFormatted;
+    if (this.elements.classStatMaterials) this.elements.classStatMaterials.textContent = uniqueMaterials;
+
+    modal.classList.add('show');
+    this.startConfetti();
+  }
+
+  hideClassFinishedModal() {
+    const modal = this.elements.classFinishedOverlay;
+    if (!modal) return;
+    modal.classList.remove('show');
+    this.stopConfetti();
+    this.elements.spinBtn.disabled = false;
+    this.elements.adminOpenBtn.disabled = false;
+    this.switchView('idle');
+    this.setStandbyState();
+  }
+
+  /**
+   * Handler for starting a new class from the celebration screen
+   */
+  handleStartNewClass() {
+    this.hideClassFinishedModal();
+    this.resetUsedHistory();
+    // Open settings drawer to optionally adjust class end time
+    this.openAdmin(true);
+  }
+
+  /**
+   * Dynamic Canvas Confetti Animation
+   */
+  startConfetti() {
+    const canvas = document.getElementById('confetti-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const colors = ['#00ffff', '#ff007f', '#39ff14', '#ffea00', '#ffffff', '#b34dff'];
+    const particles = [];
+    for (let i = 0; i < 140; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height - canvas.height,
+        size: Math.random() * 9 + 4,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        speedY: Math.random() * 3.5 + 1.8,
+        speedX: Math.random() * 4 - 2,
+        rotation: Math.random() * 360,
+        rotSpeed: Math.random() * 4 - 2
+      });
+    }
+
+    this._confettiActive = true;
+    const render = () => {
+      if (!this._confettiActive) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.y += p.speedY;
+        p.x += p.speedX;
+        p.rotation += p.rotSpeed;
+        if (p.y > canvas.height) {
+          p.y = -20;
+          p.x = Math.random() * canvas.width;
+        }
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.65);
+        ctx.restore();
+      });
+      requestAnimationFrame(render);
+    };
+    render();
+  }
+
+  stopConfetti() {
+    this._confettiActive = false;
+    const canvas = document.getElementById('confetti-canvas');
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
   }
 
   /**

@@ -403,6 +403,144 @@ header {
   to   { transform: scale(1);   opacity: 1; }
 }
 
+/* ── Grand End-of-Class Celebration Overlay ─── */
+.class-finished-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 16, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 1.5rem;
+}
+
+.class-finished-overlay.show {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.confetti-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.class-finished-card {
+  position: relative;
+  z-index: 2;
+  background: linear-gradient(135deg, rgba(28, 28, 42, 0.96) 0%, rgba(14, 14, 22, 0.98) 100%);
+  border: 3px solid var(--neon-pink);
+  box-shadow: 
+    0 25px 65px rgba(0, 0, 0, 0.85),
+    0 0 35px rgba(255, 0, 127, 0.4),
+    inset 0 0 25px rgba(255, 0, 127, 0.12);
+  border-radius: 28px;
+  padding: 2.2rem 2.8rem;
+  max-width: 580px;
+  width: 100%;
+  text-align: center;
+  animation: classFinishedPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+}
+
+@keyframes classFinishedPop {
+  0% { transform: scale(0.5) translateY(40px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.class-finished-badge {
+  font-family: var(--font-digital);
+  font-size: 0.95rem;
+  letter-spacing: 3px;
+  color: var(--neon-yellow);
+  text-shadow: var(--shadow-yellow);
+  background: rgba(255, 234, 0, 0.1);
+  border: 1px solid rgba(255, 234, 0, 0.35);
+  padding: 0.35rem 1.1rem;
+  border-radius: 20px;
+  text-transform: uppercase;
+}
+
+.class-finished-title {
+  font-family: var(--font-display);
+  font-size: clamp(2.2rem, 5vw, 3.6rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  color: #ffffff;
+  text-shadow: 0 0 15px rgba(255, 255, 255, 0.6), var(--shadow-pink);
+  line-height: 1.1;
+  margin: 0;
+}
+
+.class-finished-subtitle {
+  font-size: 1.05rem;
+  color: #cccce0;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.class-finished-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.8rem;
+  width: 100%;
+  margin-top: 0.4rem;
+}
+
+.class-stat-box {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(0, 255, 255, 0.22);
+  border-radius: 16px;
+  padding: 0.9rem 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.class-stat-box .stat-num {
+  font-family: var(--font-digital);
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--neon-cyan);
+  text-shadow: var(--shadow-cyan);
+}
+
+.class-stat-box .stat-lbl {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: #8888aa;
+  letter-spacing: 0.5px;
+}
+
+.class-finished-actions {
+  display: flex;
+  gap: 0.8rem;
+  width: 100%;
+  margin-top: 0.4rem;
+  justify-content: center;
+}
+
+.class-finished-btn {
+  flex: 1;
+  justify-content: center;
+  padding: 0.85rem 1.1rem;
+  font-size: 0.95rem;
+  border-radius: 12px;
+}
+
 
 /* ==========================================================================
    SLOT MACHINE VIEW (IDLE & SPINNING)

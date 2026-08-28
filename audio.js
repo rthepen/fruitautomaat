@@ -105,6 +105,7 @@ class AudioEngine {
       'finish_1.mp3',
       'prep_countdown_1.mp3',
       'prep_intro_1.mp3',
+      'rest_switch_start_1.mp3',
       'work_start_1.mp3',
       'work_start_2.mp3',
       'work_start_3.mp3',
@@ -294,6 +295,38 @@ class AudioEngine {
   async play10s() {
     if (this.muted || this.coach === 'arcade') return;
     await this.playCoachSound('work_10s', 1);
+  }
+
+  /**
+   * Switch / Rest cue between exercises ("Wissel!")
+   */
+  async playSwitch() {
+    if (this.muted) return;
+    this.resumeContext();
+
+    if (this.coach !== 'arcade') {
+      const played = await this.playCoachSound('rest_switch_start', 1);
+      if (played) return;
+    }
+
+    // Synthesized chime fallback
+    if (!this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.connect(gain);
+      gain.connect(this.masterGain || this.ctx.destination);
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, this.ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880, this.ctx.currentTime + 0.12); // A5
+
+      gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.35);
+
+      osc.start(this.ctx.currentTime);
+      osc.stop(this.ctx.currentTime + 0.4);
+    } catch (e) {}
   }
 
   /**

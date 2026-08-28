@@ -44,11 +44,45 @@
 
     <main id="app-main" class="app-main state-idle">
 
-      <!-- FLASH OVERLAY: "Lekker bezig!" flashes on top, then fades -->
+      <!-- FLASH OVERLAY: "Lekker bezig!" flashes on top, then fades between exercises -->
       <div id="finished-overlay" class="finished-overlay" aria-live="polite">
         <div class="finished-overlay-content">
           <div class="finished-overlay-title">LEKKER BEZIG! 🔥</div>
-          <p id="finished-exercise-text" class="finished-overlay-sub">Oefening afgerond.</p>
+          <p id="finished-exercise-text" class="finished-overlay-sub">Oefening afgerond. Wissel naar volgende!</p>
+        </div>
+      </div>
+
+      <!-- GRAND END-OF-CLASS CELEBRATION OVERLAY: Festive screen when class time ends -->
+      <div id="class-finished-overlay" class="class-finished-overlay" aria-live="assertive">
+        <canvas id="confetti-canvas" class="confetti-canvas"></canvas>
+        <div class="class-finished-card">
+          <div class="class-finished-badge">🏆 LES VOLTOOID 🏆</div>
+          <h2 class="class-finished-title">TOP GEDAAN! 🔥</h2>
+          <p class="class-finished-subtitle">De eindtijd is bereikt. De training zit erop!</p>
+
+          <div class="class-finished-stats-grid">
+            <div class="class-stat-box">
+              <span class="stat-num" id="class-stat-exercises">0</span>
+              <span class="stat-lbl">Oefeningen</span>
+            </div>
+            <div class="class-stat-box">
+              <span class="stat-num" id="class-stat-time">0m</span>
+              <span class="stat-lbl">Totale werktijd</span>
+            </div>
+            <div class="class-stat-box">
+              <span class="stat-num" id="class-stat-materials">0</span>
+              <span class="stat-lbl">Materialen</span>
+            </div>
+          </div>
+
+          <div class="class-finished-actions">
+            <button id="class-finished-new-btn" class="btn btn-pink class-finished-btn">
+              🔄 NIEUWE LES STARTEN
+            </button>
+            <button id="class-finished-close-btn" class="btn btn-cyan class-finished-btn">
+              ✕ SLUITEN
+            </button>
+          </div>
         </div>
       </div>
 

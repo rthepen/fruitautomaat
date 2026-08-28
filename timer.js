@@ -175,9 +175,6 @@ class WorkoutTimer {
         this.setState('FINISHED');
         cancelAnimationFrame(this.animationFrameId);
         
-        // Play finish signal (coach voice + victory)
-        if (window.audioEngine) window.audioEngine.playFinish();
-        
         if (this.onComplete) this.onComplete();
         return;
       }
