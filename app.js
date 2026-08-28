@@ -33,9 +33,11 @@ class WorkoutApp {
     this.usedMaterials = new Set();   // Track used materials in current cycle
     this.usedHistory = [];            // Chronological array of used exercises in current cycle
     
-    // Broken video tracking
+    // Broken video tracking & Google Sheets logging
     this.brokenVideoExerciseIds = new Set(); // Track exercises with refused/deleted/broken YouTube videos
     this.videoValidationCache = {};          // Cache videoId -> boolean validation results
+    this.googleSheetsUrl = 'https://script.google.com/macros/s/AKfycbzjwH5TfLJEinllUn3wYlQE17uno0DdnLoBaG1FmdMeVBUE0wd5-pf07TEoOg6jj2sF/exec';
+    this._loggedSheetIds = new Set();        // Prevent duplicate logs in same session
     
     // Active selection
     this.activeMaterial = null;
@@ -133,7 +135,10 @@ class WorkoutApp {
       usedHistoryStats: document.getElementById('used-history-stats'),
       resetHistoryBtn: document.getElementById('reset-history-btn'),
       scanVideosBtn: document.getElementById('scan-videos-btn'),
+      syncSheetsBtn: document.getElementById('sync-sheets-btn'),
+      downloadCsvBtn: document.getElementById('download-csv-btn'),
       resetBrokenVideosBtn: document.getElementById('reset-broken-videos-btn'),
+      googleSheetsUrlInput: document.getElementById('google-sheets-url-input'),
       brokenVideosStats: document.getElementById('broken-videos-stats'),
       brokenVideosList: document.getElementById('broken-videos-list'),
       databaseTree: document.getElementById('database-tree'),
@@ -236,9 +241,15 @@ class WorkoutApp {
       this.elements.resetHistoryBtn.addEventListener('click', () => this.resetUsedHistory());
     }
 
-    // Video check and reset buttons
+    // Video check, sheets sync, and reset buttons
     if (this.elements.scanVideosBtn) {
       this.elements.scanVideosBtn.addEventListener('click', () => this.scanAllVideos());
+    }
+    if (this.elements.syncSheetsBtn) {
+      this.elements.syncSheetsBtn.addEventListener('click', () => this.syncAllBrokenVideosToSheet());
+    }
+    if (this.elements.downloadCsvBtn) {
+      this.elements.downloadCsvBtn.addEventListener('click', () => this.downloadBrokenVideosCSV());
     }
     if (this.elements.resetBrokenVideosBtn) {
       this.elements.resetBrokenVideosBtn.addEventListener('click', () => this.resetBrokenVideos());
@@ -377,6 +388,12 @@ class WorkoutApp {
       this.brokenVideoExerciseIds = new Set();
     }
 
+    // Google Sheets Webhook URL
+    this.googleSheetsUrl = this._getCookie('workout_google_sheets_url') || localStorage.getItem('workout_google_sheets_url') || this.googleSheetsUrl;
+    if (this.elements.googleSheetsUrlInput) {
+      this.elements.googleSheetsUrlInput.value = this.googleSheetsUrl;
+    }
+
     // Audio status sync
     this.updateAudioButtonUI();
     // Start the live header clock
@@ -424,7 +441,12 @@ class WorkoutApp {
     this._setCookie('workout_coach', this.coach);
     this._setCookie('workout_require_video', this.requireVideo);
     this._setCookie('workout_no_repeat_exercises', this.noRepeatExercises);
-    this._setCookie('workout_no_repeat_materials', this.noRepeatMaterials);
+    let gUrl = this.elements.googleSheetsUrlInput ? this.elements.googleSheetsUrlInput.value.trim() : this.googleSheetsUrl;
+    this.googleSheetsUrl = gUrl;
+    this._setCookie('workout_google_sheets_url', this.googleSheetsUrl);
+    try {
+      localStorage.setItem('workout_google_sheets_url', this.googleSheetsUrl);
+    } catch (e) {}
 
     if (window.audioEngine) {
       window.audioEngine.setCoach(this.coach);
@@ -625,10 +647,12 @@ class WorkoutApp {
       const vId = this._extractYouTubeId(ex.video_search_url);
       if (!vId) {
         this.brokenVideoExerciseIds.add(ex.id);
+        this.logBrokenVideoToGoogleSheet(ex, 'Geen geldig YouTube ID');
       } else {
         const isValid = await this.validateYouTubeVideo(vId);
         if (!isValid) {
           this.brokenVideoExerciseIds.add(ex.id);
+          this.logBrokenVideoToGoogleSheet(ex, 'Verbinding geweigerd / onbereikbaar');
         } else {
           this.brokenVideoExerciseIds.delete(ex.id);
         }
@@ -718,8 +742,128 @@ class WorkoutApp {
       this.updateReelsPool();
       alert(`Video voor "${targetEx.exercise_name}" werkt correct en is weer toegevoegd aan de pool!`);
     } else {
-      alert(`Video voor "${targetEx.exercise_name}" kan nog steeds niet worden geladen.`);
+      // Log to Google Sheets
+      this.logBrokenVideoToGoogleSheet(targetEx, 'Handmatige test geweigerd');
+      alert(`Video voor "${targetEx.exercise_name}" kan nog steeds niet worden geladen (gelogd naar Google Sheet).`);
     }
+  }
+
+  /**
+   * Log an exercise with a broken video directly to Google Sheets via Webhook
+   */
+  async logBrokenVideoToGoogleSheet(exercise, reason = 'Verbinding geweigerd / video onbereikbaar') {
+    if (!exercise) return;
+    const url = (this.googleSheetsUrl || '').trim();
+    if (!url) return;
+
+    if (this._loggedSheetIds.has(exercise.id)) return;
+    this._loggedSheetIds.add(exercise.id);
+
+    const payload = {
+      timestamp: new Date().toLocaleString('nl-NL'),
+      id: exercise.id,
+      exercise_name: exercise.exercise_name,
+      material_name: exercise.material_name || exercise.material || '',
+      video_url: exercise.video_search_url || '',
+      error_reason: reason,
+      app: 'Workout Fruitautomaat'
+    };
+
+    try {
+      await fetch(url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'text/plain'
+        },
+        body: JSON.stringify(payload)
+      });
+      console.log(`[Google Sheet] Gelogd: ${exercise.exercise_name}`);
+    } catch (err) {
+      console.warn('[Google Sheet] Fout bij versturen naar sheet:', err);
+    }
+  }
+
+  /**
+   * Manual batch sync of all detected broken videos to Google Sheets
+   */
+  async syncAllBrokenVideosToSheet() {
+    const url = (this.googleSheetsUrl || '').trim();
+    if (!url) {
+      alert("Vul eerst een geldige Google Sheets Webhook URL in.");
+      return;
+    }
+
+    const broken = [];
+    for (const mat in this.database) {
+      for (const ex of this.database[mat]) {
+        if (this.brokenVideoExerciseIds.has(ex.id)) {
+          broken.push({ ...ex, material: mat });
+        }
+      }
+    }
+
+    if (broken.length === 0) {
+      alert("Er zijn momenteel geen niet-werkende video's om te versturen.");
+      return;
+    }
+
+    if (this.elements.syncSheetsBtn) {
+      this.elements.syncSheetsBtn.disabled = true;
+      this.elements.syncSheetsBtn.textContent = "⏳ Verzenden...";
+    }
+
+    let sent = 0;
+    for (const ex of broken) {
+      await this.logBrokenVideoToGoogleSheet(ex, 'Verbinding geweigerd / scan');
+      sent++;
+    }
+
+    alert(`${sent} niet-werkende video('s) verzonden naar je Google Sheet!`);
+
+    if (this.elements.syncSheetsBtn) {
+      this.elements.syncSheetsBtn.disabled = false;
+      this.elements.syncSheetsBtn.textContent = "📊 Naar Google Sheet";
+    }
+  }
+
+  /**
+   * Export broken videos as CSV file
+   */
+  downloadBrokenVideosCSV() {
+    const broken = [];
+    for (const mat in this.database) {
+      for (const ex of this.database[mat]) {
+        if (this.brokenVideoExerciseIds.has(ex.id)) {
+          broken.push({ ...ex, material: mat });
+        }
+      }
+    }
+
+    if (broken.length === 0) {
+      alert("Er zijn geen niet-werkende video's om te downloaden.");
+      return;
+    }
+
+    const headers = ['Datum', 'Oefening ID', 'Oefening Naam', 'Materiaal', 'Video URL', 'Status'];
+    const rows = broken.map(ex => [
+      `"${new Date().toLocaleDateString('nl-NL')}"`,
+      `"${ex.id}"`,
+      `"${(ex.exercise_name || '').replace(/"/g, '""')}"`,
+      `"${(ex.material || '').replace(/"/g, '""')}"`,
+      `"${(ex.video_search_url || '').replace(/"/g, '""')}"`,
+      `"Verbinding geweigerd"`
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', blobUrl);
+    link.setAttribute('download', `niet-werkende-videos-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   }
 
   /**
@@ -1217,6 +1361,7 @@ class WorkoutApp {
         // Video is refused / broken! Mark in broken list
         this.brokenVideoExerciseIds.add(chosenExercise.id);
         this._saveBrokenVideos();
+        this.logBrokenVideoToGoogleSheet(chosenExercise, 'Gedetecteerd tijdens spin');
         // If requireVideo is on, pick an alternative working exercise
         if (this.requireVideo) {
           const workingAlternatives = allEnabledExercises.filter(ex => 
@@ -1678,6 +1823,9 @@ class WorkoutApp {
       }
       if (this.elements.noRepeatMaterialsInput) {
         this.elements.noRepeatMaterialsInput.checked = this.noRepeatMaterials;
+      }
+      if (this.elements.googleSheetsUrlInput) {
+        this.elements.googleSheetsUrlInput.value = this.googleSheetsUrl;
       }
       
       // Render used history list & stats

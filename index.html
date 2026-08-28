@@ -264,14 +264,24 @@
         <section class="admin-section">
           <div class="used-history-header">
             <h3>Niet-werkende video's</h3>
-            <div style="display:flex; gap:0.4rem;">
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
               <button id="scan-videos-btn" class="btn btn-cyan btn-tiny" title="Scan alle video's in de database op geldigheid">
                 🔍 Scan video's
+              </button>
+              <button id="sync-sheets-btn" class="btn btn-cyan btn-tiny" title="Stuur lijst met niet-werkende video's naar Google Sheets">
+                📊 Naar Google Sheet
+              </button>
+              <button id="download-csv-btn" class="btn btn-cyan btn-tiny" title="Download lijst als CSV bestand">
+                📥 CSV
               </button>
               <button id="reset-broken-videos-btn" class="btn btn-pink btn-tiny" title="Wis lijst met niet-werkende video's">
                 🔄 Reset lijst
               </button>
             </div>
+          </div>
+          <div class="input-group" style="margin-top: 0.6rem;">
+            <label for="google-sheets-url-input">Google Sheets Webhook URL</label>
+            <input type="text" id="google-sheets-url-input" placeholder="https://script.google.com/macros/s/.../exec" value="">
           </div>
           <div class="used-history-stats" id="broken-videos-stats"></div>
           <div class="used-history-list" id="broken-videos-list">
