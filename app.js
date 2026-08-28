@@ -204,6 +204,8 @@ class WorkoutApp {
       videoSlot: document.getElementById('video-slot'),
       videoFallbackImg: document.getElementById('video-fallback-img'),
       instructionText: document.getElementById('instruction-text'),
+      instructionThumbImg: document.getElementById('instruction-thumb-img'),
+      instructionThumbPreview: document.getElementById('instruction-thumb-preview'),
 
       // Workout Controls (Trainer panel)
       btnPause: document.getElementById('btn-pause'),
@@ -1416,10 +1418,14 @@ class WorkoutApp {
       const isCurrent = index === this.currentScheduleIndex;
       const statusClass = isCurrent ? 'item-active' : (isPast ? 'item-done' : '');
 
+      const vId = this._extractYouTubeId(item.exercise.video_search_url || '');
+      const thumb = (item.exercise.thumbnail || '').trim() || (vId ? `https://img.youtube.com/vi/${vId}/hqdefault.jpg` : '');
+
       return `
         <div class="secret-schedule-item ${statusClass}">
           <div class="secret-item-left">
             <div class="secret-item-index">${index + 1}</div>
+            ${thumb ? `<img class="secret-item-thumb" src="${thumb}" alt="${item.exercise.exercise_name}">` : ''}
             <div class="secret-item-info">
               <div class="secret-item-name">${item.exercise.exercise_name}</div>
               <div class="secret-item-meta">
@@ -1992,6 +1998,23 @@ class WorkoutApp {
     this.elements.hudExerciseName.textContent = this.activeExercise.exercise_name;
     this.elements.hudMaterialInfo.textContent = this.activeMaterial;
     this.elements.instructionText.textContent = this.activeExercise.instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.";
+
+    // Always display the exercise technique thumbnail preview
+    const rawUrl = (this.activeExercise.video_search_url || '').trim();
+    const videoId = this._extractYouTubeId(rawUrl);
+    const thumb = (this.activeExercise.thumbnail || '').trim() || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
+
+    if (this.elements.instructionThumbImg) {
+      if (thumb) {
+        this.elements.instructionThumbImg.src = thumb;
+        this.elements.instructionThumbImg.style.display = 'block';
+        if (this.elements.instructionThumbPreview) this.elements.instructionThumbPreview.style.display = 'flex';
+      } else {
+        this.elements.instructionThumbImg.src = '';
+        this.elements.instructionThumbImg.style.display = 'none';
+        if (this.elements.instructionThumbPreview) this.elements.instructionThumbPreview.style.display = 'none';
+      }
+    }
 
     // Set initial countdown number in unified timer
     this.elements.timerDigits.textContent = this.countdownTime;

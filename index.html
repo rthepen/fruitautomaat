@@ -159,10 +159,16 @@
           ></iframe>
           <img id="video-fallback-img" class="video-fallback-img" src="" alt="" style="display:none;">
         </div>
-        <!-- Instruction card -->
+        <!-- Instruction card with always-visible technique thumbnail preview -->
         <div class="instruction-card">
           <div class="instruction-title">Instructie</div>
-          <p id="instruction-text" class="instruction-text">---</p>
+          <div class="instruction-content-row">
+            <p id="instruction-text" class="instruction-text">---</p>
+            <div class="instruction-thumb-preview" id="instruction-thumb-preview" style="display:none;">
+              <img id="instruction-thumb-img" class="instruction-thumb-img" src="" alt="Techniek Thumbnail">
+              <span class="instruction-thumb-label">VOORBEELD</span>
+            </div>
+          </div>
         </div>
       </div>
 
