@@ -17,38 +17,39 @@ class AudioEngine {
     this.audioCache = {}; // url -> AudioBuffer
     this.playlists = {};  // Track randomized playlists
 
-    // Automatic initialization on first user touch/click interaction
+    // Automatic initialization on first user interaction (touch, click, pointer, key)
     const initCtx = () => {
       try {
-        if (!this.ctx) {
-          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-          this.masterGain = this.ctx.createGain();
-          this.masterGain.gain.value = this.muted ? 0 : this.volume;
-          this.masterGain.connect(this.ctx.destination);
-        }
-        if (this.ctx.state === 'suspended') {
-          this.ctx.resume().catch(() => {});
-        }
+        this.resumeContext();
         
-        // Play a short silent buffer to unlock audio on iOS
-        const buffer = this.ctx.createBuffer(1, 1, 22050);
-        const source = this.ctx.createBufferSource();
-        source.buffer = buffer;
-        source.connect(this.masterGain);
-        source.start(0);
+        // Play a short silent buffer to unlock audio on iOS / Safari
+        if (this.ctx) {
+          const buffer = this.ctx.createBuffer(1, 1, 22050);
+          const source = this.ctx.createBufferSource();
+          source.buffer = buffer;
+          source.connect(this.masterGain || this.ctx.destination);
+          source.start(0);
+        }
         
         // Preload current coach sounds
         this.preloadCoach(this.coach);
 
-        window.removeEventListener('click', initCtx, { capture: true });
-        window.removeEventListener('touchstart', initCtx, { capture: true });
+        ['click', 'touchstart', 'touchend', 'pointerdown', 'keydown'].forEach(evt => {
+          window.removeEventListener(evt, initCtx, { capture: true });
+        });
       } catch (e) {
         console.warn("Failed to initialize AudioContext:", e);
       }
     };
 
-    window.addEventListener('click', initCtx, { capture: true });
-    window.addEventListener('touchstart', initCtx, { capture: true });
+    ['click', 'touchstart', 'touchend', 'pointerdown', 'keydown'].forEach(evt => {
+      window.addEventListener(evt, initCtx, { capture: true });
+    });
+
+    // Start preloading immediately
+    setTimeout(() => {
+      this.preloadCoach(this.coach);
+    }, 500);
   }
 
   /** Cookie helpers */
@@ -79,15 +80,24 @@ class AudioEngine {
     }
   }
 
-  /** Resume context helper */
+  /** Resume context helper - ensures AudioContext exists and is running */
   resumeContext() {
-    if (this.ctx && this.ctx.state === 'suspended') {
-      this.ctx.resume().catch(() => {});
-    }
+    try {
+      if (!this.ctx) {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = this.muted ? 0 : this.volume;
+        this.masterGain.connect(this.ctx.destination);
+      }
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+    } catch (e) {}
   }
 
   /** Toggle sound effects mute state */
   toggleMute() {
+    this.resumeContext();
     this.muted = !this.muted;
     this._setCookie('workout_audio_muted', this.muted);
     if (this.masterGain) {
@@ -124,7 +134,15 @@ class AudioEngine {
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             return res.arrayBuffer();
           })
-          .then(ab => this.ctx ? this.ctx.decodeAudioData(ab) : null)
+          .then(ab => {
+            if (!this.ctx) {
+              this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+              this.masterGain = this.ctx.createGain();
+              this.masterGain.gain.value = this.muted ? 0 : this.volume;
+              this.masterGain.connect(this.ctx.destination);
+            }
+            return this.ctx.decodeAudioData(ab);
+          })
           .then(buffer => {
             if (buffer) this.audioCache[url] = buffer;
           })

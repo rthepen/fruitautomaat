@@ -34,6 +34,9 @@ class WorkoutApp {
     this.usedMaterials = new Set();   // Track used materials in current cycle
     this.usedHistory = [];            // Chronological array of used exercises in current cycle
     
+    // Session Tracking
+    this._sessionExerciseCount = 0;   // Count of exercises completed in this browser session
+
     // Pre-Planned Schedule
     this.plannedSchedule = [];        // Pre-generated workout sequence: [{ id, exercise, material, time, status }]
     this.currentScheduleIndex = 0;    // Index of the next exercise to spin
@@ -97,6 +100,9 @@ class WorkoutApp {
       
       // Pre-generate the full planned workout schedule in the background
       await this.generatePlannedSchedule();
+      
+      // Start live clock and tickers ONLY after database and schedule are fully loaded
+      this.startClassClock();
       
       this.showLoading(false);
       
@@ -521,8 +527,6 @@ class WorkoutApp {
 
     // Audio status sync
     this.updateAudioButtonUI();
-    // Start the live header clock
-    this.startClassClock();
   }
 
   saveSettings() {
@@ -1159,6 +1163,9 @@ class WorkoutApp {
   startClassClock() {
     if (this._clockInterval) clearInterval(this._clockInterval);
     const tick = () => {
+      // Guard: do not tick auto-start if database has not loaded yet
+      if (!this.database || Object.keys(this.database).length === 0) return;
+
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, '0');
       const mm = String(now.getMinutes()).padStart(2, '0');
@@ -1825,6 +1832,11 @@ class WorkoutApp {
    * Handle click on SPIN button (or automatic trigger on start time)
    */
   async handleSpin() {
+    // Resume/unlock Web Audio immediately on user interaction
+    if (window.audioEngine) {
+      window.audioEngine.resumeContext();
+    }
+
     // If class end time has been reached or remaining time is insufficient for full exercise cycle
     if (this._isClassFinished()) {
       if (window.audioEngine) window.audioEngine.playFinish();
@@ -1891,6 +1903,9 @@ class WorkoutApp {
       item.status = 'active';
       this.currentScheduleIndex = this.plannedSchedule.length;
     }
+
+    // Increment count of exercises performed in this session
+    this._sessionExerciseCount++;
 
     // Live video verification during spin
     const videoId = this._extractYouTubeId(chosenExercise.video_search_url);
@@ -1999,7 +2014,7 @@ class WorkoutApp {
     // Load YouTube iframe NOW (during countdown) so it's already playing when workout starts
     this._loadYouTubeIframe();
 
-    const isFirstRound = (this.currentScheduleIndex <= 1 && this.usedHistory.length <= 1);
+    const isFirstRound = (this._sessionExerciseCount === 1);
     const isLastRound = this._isCurrentExerciseLastRound();
 
     this.timer.start(this.activeTime, {
@@ -2271,6 +2286,7 @@ class WorkoutApp {
    * Handler for starting a new class from the celebration screen
    */
   handleStartNewClass() {
+    this._sessionExerciseCount = 0;
     this.hideClassFinishedModal();
     this.resetUsedHistory();
     // Open settings drawer to optionally adjust class end time
