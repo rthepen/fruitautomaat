@@ -3,7 +3,10 @@
  * Coordinates data loading, state transitions, event handling, and admin panel interactions.
  */
 
-// Database list
+// GitHub Database Config
+const GITHUB_DATABASE_URL = "https://raw.githubusercontent.com/rthepen/workout-database/main/dist/all_exercises.json";
+
+// Fallback local database files
 const DATABASE_FILES = [
   "ab_wheel.json", "agility_ladder.json", "barbell.json", "battle_rope.json",
   "bodyweight.json", "bosu_ball.json", "cardio_equipment.json", "core_sliders.json",
@@ -14,6 +17,93 @@ const DATABASE_FILES = [
   "tractor_tyre.json", "trx___suspension.json"
 ];
 
+/**
+ * Normalizes raw exercises from rthepen/workout-database GitHub repository
+ */
+function _normalizeGitHubExercise(rawEx) {
+  // Exercise name (prefer Dutch, fallback English)
+  let exName = "";
+  if (typeof rawEx.exercise_name === "object" && rawEx.exercise_name !== null) {
+    exName = rawEx.exercise_name.nl || rawEx.exercise_name.en || "Oefening";
+  } else {
+    exName = rawEx.exercise_name || "Oefening";
+  }
+
+  // Material name (e.g. "Ab Wheel", "Agility Ladder", etc.)
+  let matName = "";
+  if (rawEx.material && typeof rawEx.material.name === "object" && rawEx.material.name !== null) {
+    matName = rawEx.material.name.en || rawEx.material.name.nl || "Lichaamsgewicht";
+  } else if (rawEx.material_name) {
+    matName = rawEx.material_name;
+  } else {
+    matName = "Lichaamsgewicht";
+  }
+
+  // Category
+  let category = "";
+  if (typeof rawEx.category === "object" && rawEx.category !== null) {
+    category = rawEx.category.nl || rawEx.category.en || "Algemeen";
+  } else {
+    category = rawEx.category || "Algemeen";
+  }
+
+  // Material description
+  let matDesc = "";
+  if (rawEx.material && typeof rawEx.material.description === "object" && rawEx.material.description !== null) {
+    matDesc = rawEx.material.description.nl || rawEx.material.description.en || "";
+  } else if (rawEx.material_description) {
+    matDesc = rawEx.material_description;
+  }
+
+  // Instructions
+  let instructions = "";
+  if (typeof rawEx.instructions === "string") {
+    instructions = rawEx.instructions;
+  } else if (rawEx.instructions && typeof rawEx.instructions === "object") {
+    const langInst = rawEx.instructions.nl || rawEx.instructions.en || [];
+    if (Array.isArray(langInst)) {
+      instructions = langInst.join(" ");
+    } else if (typeof langInst === "string") {
+      instructions = langInst;
+    }
+  }
+
+  // YouTube Video URL & Thumbnail
+  let videoUrl = "";
+  let thumbUrl = "";
+  if (rawEx.media && Array.isArray(rawEx.media.videos) && rawEx.media.videos.length > 0) {
+    const bestVid = rawEx.media.videos.find(v => v.youtube_id) || rawEx.media.videos[0];
+    if (bestVid && bestVid.youtube_id) {
+      videoUrl = `https://www.youtube.com/watch?v=${bestVid.youtube_id}`;
+      thumbUrl = `https://img.youtube.com/vi/${bestVid.youtube_id}/hqdefault.jpg`;
+    }
+  }
+  if (!videoUrl && rawEx.video_search_url) {
+    videoUrl = rawEx.video_search_url;
+  }
+  if (!thumbUrl && rawEx.thumbnail) {
+    thumbUrl = rawEx.thumbnail;
+  }
+
+  // ID with material prefix
+  let id = rawEx.id || `ex_${Math.random().toString(36).substr(2, 9)}`;
+  const prefix = matName.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_';
+  if (!id.startsWith(prefix)) {
+    id = prefix + id;
+  }
+
+  return {
+    id: id,
+    exercise_name: exName,
+    category: category,
+    material_name: matName,
+    material_description: matDesc,
+    instructions: instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.",
+    video_search_url: videoUrl,
+    thumbnail: thumbUrl
+  };
+}
+
 class WorkoutApp {
   constructor() {
     // App State
@@ -22,7 +112,7 @@ class WorkoutApp {
     this.tempDisabledExerciseIds = new Set(); // Temporary set for uncommitted settings changes
     this.minTime = 30;
     this.maxTime = 120;
-    this.countdownTime = 10; // Get ready countdown time (customizable)
+    this.countdownTime = 15; // Get ready countdown time (customizable, default 15s)
     this.classStartTime = ''; // 'HH:MM' string (optional auto-start time)
     this.classEndTime = '';   // 'HH:MM' string (class finish time)
     this.volume = 2.0;       // 0–3.0 (200% default)
@@ -53,6 +143,13 @@ class WorkoutApp {
     this.googleSheetsUrl = 'https://script.google.com/macros/s/AKfycbx6ccQx8Cobis3AF45-Gxg5GrkTCyPDn6KS32XykObIhMHD-aaWeElO2tD61UC9Ud4Vxw/exec';
     this._loggedSheetIds = new Set();        // Prevent duplicate logs in same session
     
+    // Multi-team Circuit state
+    this.teamCount = 1;               // Number of teams (1 to 8)
+    this.circuitRotation = true;      // true = teams rotate stations; false = fresh spin every round
+    this.currentRotationIndex = 0;    // Active circuit station rotation (0 to teamCount - 1)
+    this.activeStations = [];         // Active round stations: [{ stationIndex, material, exercise }]
+    this.activeStationPreviewIndex = 0; // Station shown in preview player
+
     // Active selection
     this.activeMaterial = null;
     this.activeExercise = null;
@@ -82,11 +179,14 @@ class WorkoutApp {
     this.bindEvents();
     
     // Initialize components
-    this.slotMachine = new SlotMachine([
-      this.elements.reel1,
-      this.elements.reel2,
-      this.elements.reel3
-    ]);
+    this.slotMachine = new SlotMachine(
+      this.elements.slotReelsContainer || [
+        this.elements.reel1,
+        this.elements.reel2,
+        this.elements.reel3
+      ],
+      this.teamCount
+    );
     
     this.timer = new WorkoutTimer();
 
@@ -94,6 +194,16 @@ class WorkoutApp {
       this.showLoading(true);
       await this.loadDatabase();
       this.buildAdminTree();
+      if (this.elements.appMain) {
+        if (this.teamCount > 1) {
+          this.elements.appMain.classList.add('has-multi-teams');
+        } else {
+          this.elements.appMain.classList.remove('has-multi-teams');
+        }
+      }
+      if (this.elements.slotReelsContainer) {
+        this.slotMachine.configureTeams(this.teamCount, this.elements.slotReelsContainer);
+      }
       this.updateReelsPool();
       this.renderUsedHistory();
       this.renderBrokenVideosList();
@@ -199,6 +309,7 @@ class WorkoutApp {
       hudExerciseName: document.getElementById('hud-exercise-name'),
       hudMaterialInfo: document.getElementById('hud-material-info'),
       timerDigits: document.getElementById('timer-digits'),
+      timerProgressFill: document.getElementById('timer-progress-fill'),
       timerProgressCircle: document.getElementById('timer-progress-circle'),
       workoutIframe: document.getElementById('workout-video-iframe'),
       videoSlot: document.getElementById('video-slot'),
@@ -221,7 +332,29 @@ class WorkoutApp {
       classStatTime: document.getElementById('class-stat-time'),
       classStatMaterials: document.getElementById('class-stat-materials'),
       classFinishedNewBtn: document.getElementById('class-finished-new-btn'),
-      classFinishedCloseBtn: document.getElementById('class-finished-close-btn')
+      classFinishedCloseBtn: document.getElementById('class-finished-close-btn'),
+
+      // Multi-Team & Circuit Elements
+      singleTeamHudWrapper: document.getElementById('single-team-hud-wrapper'),
+      multiVideoGrid: document.getElementById('multi-video-grid'),
+      slotReelsContainer: document.getElementById('slot-reels-container'),
+      quickTeamSelect: document.getElementById('quick-team-select'),
+      teamCountInput: document.getElementById('team-count-input'),
+      circuitRotationInput: document.getElementById('circuit-rotation-input'),
+      circuitRotationBadge: document.getElementById('circuit-rotation-badge'),
+      stationsTrackerBar: document.getElementById('stations-tracker-bar'),
+      stationsOverviewPanel: document.getElementById('stations-overview-panel'),
+      finishedOverlayTitle: document.getElementById('finished-overlay-title'),
+      finishedRotationDetails: document.getElementById('finished-rotation-details'),
+
+      // GitHub Database Sync Elements
+      btnSyncDatabase: document.getElementById('btn-sync-database'),
+      dbSyncStatusBadge: document.getElementById('db-sync-status-badge'),
+      dbSyncLastTime: document.getElementById('db-sync-last-time'),
+      dbSyncStatsModal: document.getElementById('db-sync-stats-modal'),
+      dbSyncStatsBody: document.getElementById('db-sync-stats-body'),
+      dbSyncStatsClose: document.getElementById('db-sync-stats-close'),
+      dbSyncStatsOkBtn: document.getElementById('db-sync-stats-ok-btn')
     };
   }
 
@@ -231,6 +364,42 @@ class WorkoutApp {
   bindEvents() {
     // Spin Button
     this.elements.spinBtn.addEventListener('click', () => this.handleSpin());
+
+    // Teams Selectors
+    if (this.elements.quickTeamSelect) {
+      this.elements.quickTeamSelect.addEventListener('change', (e) => {
+        this.setTeamCount(parseInt(e.target.value));
+      });
+    }
+    if (this.elements.teamCountInput) {
+      this.elements.teamCountInput.addEventListener('change', (e) => {
+        this.setTeamCount(parseInt(e.target.value));
+      });
+    }
+    if (this.elements.circuitRotationInput) {
+      this.elements.circuitRotationInput.addEventListener('change', (e) => {
+        this.circuitRotation = e.target.checked;
+        this._setCookie('workout_circuit_rotation', this.circuitRotation);
+        this.generatePlannedSchedule(true);
+      });
+    }
+
+    // GitHub Database Sync
+    if (this.elements.btnSyncDatabase) {
+      this.elements.btnSyncDatabase.addEventListener('click', () => {
+        this.syncDatabaseFromGitHub(true);
+      });
+    }
+    if (this.elements.dbSyncStatsClose) {
+      this.elements.dbSyncStatsClose.addEventListener('click', () => {
+        if (this.elements.dbSyncStatsModal) this.elements.dbSyncStatsModal.style.display = 'none';
+      });
+    }
+    if (this.elements.dbSyncStatsOkBtn) {
+      this.elements.dbSyncStatsOkBtn.addEventListener('click', () => {
+        if (this.elements.dbSyncStatsModal) this.elements.dbSyncStatsModal.style.display = 'none';
+      });
+    }
     
     // Class Finished Modal buttons
     if (this.elements.classFinishedNewBtn) {
@@ -376,36 +545,236 @@ class WorkoutApp {
   }
 
   /**
-   * Load JSON Workout Data
+   * Populate internal database grouped by material name
    */
-  async loadDatabase() {
+  _populateDatabaseFromRawArray(exercisesArray) {
+    this.database = {};
+    exercisesArray.forEach(rawEx => {
+      const ex = _normalizeGitHubExercise(rawEx);
+      const mat = ex.material_name || "Lichaamsgewicht";
+      if (!this.database[mat]) {
+        this.database[mat] = [];
+      }
+      this.database[mat].push(ex);
+    });
+  }
+
+  /**
+   * Fallback: load local JSON files from ./workoutdatabase
+   */
+  async _loadLocalDatabaseFiles() {
     this.database = {};
     const fetchPromises = DATABASE_FILES.map(async (filename) => {
-      const response = await fetch(`./workoutdatabase/${filename}`);
-      if (!response.ok) {
-        throw new Error(`Failed to load ${filename}`);
+      try {
+        const response = await fetch(`./workoutdatabase/${filename}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        data.forEach(rawEx => {
+          const ex = _normalizeGitHubExercise(rawEx);
+          const mat = ex.material_name || "Lichaamsgewicht";
+          if (!this.database[mat]) this.database[mat] = [];
+          this.database[mat].push(ex);
+        });
+      } catch (err) {
+        console.warn(`Local file load failed for ${filename}:`, err);
       }
-      const data = await response.json();
-      
-      // Group exercises by material name
-      data.forEach(exercise => {
-        // Fallback for missing fields
-        const matName = exercise.material_name || "Lichaamsgewicht";
-        if (!this.database[matName]) {
-          this.database[matName] = [];
-        }
+    });
+    await Promise.all(fetchPromises);
+  }
 
-        // Ensure globally unique IDs by prefixing with material name
-        const prefix = matName.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_';
-        if (!exercise.id.startsWith(prefix)) {
-          exercise.id = prefix + exercise.id;
-        }
+  /**
+   * Update sync UI status in settings drawer
+   */
+  _updateSyncUI(isGitHub, timestamp = null, isCached = false) {
+    if (this.elements.dbSyncStatusBadge) {
+      if (isGitHub) {
+        this.elements.dbSyncStatusBadge.textContent = isCached ? "GITHUB (CACHE)" : "LIVE GITHUB";
+        this.elements.dbSyncStatusBadge.style.color = "var(--neon-green)";
+        this.elements.dbSyncStatusBadge.style.borderColor = "rgba(57,255,20,0.3)";
+        this.elements.dbSyncStatusBadge.style.background = "rgba(57,255,20,0.15)";
+      } else {
+        this.elements.dbSyncStatusBadge.textContent = "LOKAAL (OFFLINE)";
+        this.elements.dbSyncStatusBadge.style.color = "var(--neon-yellow)";
+        this.elements.dbSyncStatusBadge.style.borderColor = "rgba(255,230,0,0.3)";
+        this.elements.dbSyncStatusBadge.style.background = "rgba(255,230,0,0.15)";
+      }
+    }
+    if (this.elements.dbSyncLastTime) {
+      if (timestamp) {
+        const d = (timestamp instanceof Date) ? timestamp : new Date(timestamp);
+        this.elements.dbSyncLastTime.textContent = `Laatste sync: ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} op ${d.toLocaleDateString()}`;
+      } else {
+        this.elements.dbSyncLastTime.textContent = "Laatste sync: zojuist";
+      }
+    }
+  }
 
-        this.database[matName].push(exercise);
+  /**
+   * Load JSON Workout Data - always attempts GitHub repo first, then cache, then local files
+   */
+  async loadDatabase() {
+    let loaded = false;
+
+    // 1. Try Live GitHub fetch
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const res = await fetch(`${GITHUB_DATABASE_URL}?t=${Date.now()}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          this._populateDatabaseFromRawArray(data);
+          const now = new Date();
+          try {
+            localStorage.setItem('cached_github_workout_database', JSON.stringify(data));
+            localStorage.setItem('cached_github_workout_database_time', now.toISOString());
+          } catch(e) { console.warn("Could not save to localStorage:", e); }
+          loaded = true;
+          this._updateSyncUI(true, now, false);
+          console.log(`Geladen vanaf GitHub repository: ${data.length} oefeningen`);
+        }
+      }
+    } catch (err) {
+      console.warn("GitHub live load niet geslaagd of offline, controleer cache...", err);
+    }
+
+    // 2. Try localStorage cache
+    if (!loaded) {
+      try {
+        const cached = localStorage.getItem('cached_github_workout_database');
+        const cachedTime = localStorage.getItem('cached_github_workout_database_time');
+        if (cached) {
+          const data = JSON.parse(cached);
+          if (Array.isArray(data) && data.length > 0) {
+            this._populateDatabaseFromRawArray(data);
+            loaded = true;
+            this._updateSyncUI(true, cachedTime ? new Date(cachedTime) : null, true);
+            console.log(`Geladen uit lokale browser cache: ${data.length} oefeningen`);
+          }
+        }
+      } catch (e) {
+        console.warn("Fout bij lezen uit cache:", e);
+      }
+    }
+
+    // 3. Fallback to local ./workoutdatabase files
+    if (!loaded) {
+      console.log("Val terug op lokale workoutdatabase bestanden...");
+      await this._loadLocalDatabaseFiles();
+      this._updateSyncUI(false, new Date());
+    }
+  }
+
+  /**
+   * Explicitly Sync Database with GitHub repository
+   */
+  async syncDatabaseFromGitHub(userTriggered = false) {
+    const btn = this.elements.btnSyncDatabase;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '⏳ Bezig...';
+    }
+
+    try {
+      const res = await fetch(`${GITHUB_DATABASE_URL}?t=${Date.now()}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      if (!Array.isArray(data) || data.length === 0) {
+        throw new Error("Geen oefeningen gevonden in data.");
+      }
+
+      this._populateDatabaseFromRawArray(data);
+      const syncTime = new Date();
+      try {
+        localStorage.setItem('cached_github_workout_database', JSON.stringify(data));
+        localStorage.setItem('cached_github_workout_database_time', syncTime.toISOString());
+      } catch(e) { console.warn("Could not save to localStorage:", e); }
+
+      this.buildAdminTree();
+      this.updateReelsPool();
+      this.generatePlannedSchedule(true);
+      this._updateSyncUI(true, syncTime, false);
+
+      if (userTriggered) {
+        this._showSyncStatsModal(data, syncTime);
+        try {
+          if (window.audioEngine) {
+            if (typeof window.audioEngine.playWin === 'function') {
+              window.audioEngine.playWin();
+            } else if (typeof window.audioEngine.playBell === 'function') {
+              window.audioEngine.playBell();
+            }
+          }
+        } catch (audioErr) {
+          console.warn("Audio feedback error:", audioErr);
+        }
+      }
+    } catch (err) {
+      console.error("Sync database failed:", err);
+      alert(`Synchronisatie mislukt: ${err.message}. Controleer je internetverbinding.`);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Sync Database';
+      }
+    }
+  }
+
+  /**
+   * Display statistics popup modal after successful GitHub sync
+   */
+  _showSyncStatsModal(data, syncTime) {
+    const modal = this.elements.dbSyncStatsModal;
+    const body = this.elements.dbSyncStatsBody;
+    if (!modal || !body) return;
+
+    const totalExercises = Object.values(this.database).reduce((acc, list) => acc + list.length, 0);
+    const materialsCount = Object.keys(this.database).length;
+    const categories = new Set();
+    let withVideo = 0;
+
+    Object.values(this.database).forEach(list => {
+      list.forEach(ex => {
+        if (ex.category) categories.add(ex.category);
+        if (ex.video_search_url && !this.brokenVideoExerciseIds.has(ex.id)) withVideo++;
       });
     });
 
-    await Promise.all(fetchPromises);
+    const formattedTime = syncTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + 
+      ' op ' + syncTime.toLocaleDateString();
+
+    body.innerHTML = `
+      <div style="font-size:0.85rem; color:#aaa; line-height:1.4;">
+        Succesvol de meest recente oefeningen database binnengehaald vanaf <strong style="color:var(--neon-cyan);">github.com/rthepen/workout-database</strong>.
+      </div>
+      <div class="db-stats-grid">
+        <div class="db-stat-box">
+          <span class="db-stat-num">${totalExercises}</span>
+          <span class="db-stat-lbl">Totaal Oefeningen</span>
+        </div>
+        <div class="db-stat-box">
+          <span class="db-stat-num" style="color:var(--neon-pink);">${materialsCount}</span>
+          <span class="db-stat-lbl">Workout Stations</span>
+        </div>
+        <div class="db-stat-box">
+          <span class="db-stat-num" style="color:var(--neon-green);">${withVideo}</span>
+          <span class="db-stat-lbl">Met YouTube Video</span>
+        </div>
+        <div class="db-stat-box">
+          <span class="db-stat-num" style="color:var(--neon-yellow);">${categories.size}</span>
+          <span class="db-stat-lbl">Categorieën</span>
+        </div>
+      </div>
+      <div style="background:rgba(255,255,255,0.04); border-radius:8px; padding:0.6rem 0.8rem; font-size:0.75rem; color:#8888aa; display:flex; justify-content:space-between;">
+        <span>Tijdstip:</span>
+        <span style="color:#fff; font-weight:bold;">${formattedTime}</span>
+      </div>
+    `;
+
+    modal.style.display = 'flex';
   }
 
   /** Cookie helpers */
@@ -424,7 +793,7 @@ class WorkoutApp {
   loadSettings() {
     this.minTime = parseInt(this._getCookie('workout_min_time')) || 30;
     this.maxTime = parseInt(this._getCookie('workout_max_time')) || 120;
-    this.countdownTime = parseInt(this._getCookie('workout_countdown_time')) || 10;
+    this.countdownTime = parseInt(this._getCookie('workout_countdown_time')) || 15;
     this.classStartTime = this._getCookie('workout_class_start') || '';
     this.classEndTime = this._getCookie('workout_class_end') || '';
     this.volume = parseFloat(this._getCookie('workout_volume')) || 2.0;
@@ -433,6 +802,8 @@ class WorkoutApp {
     this.requireVideo = this._getCookie('workout_require_video') !== 'false';
     this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
     this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
+    this.teamCount = parseInt(this._getCookie('workout_team_count')) || 1;
+    this.circuitRotation = this._getCookie('workout_circuit_rotation') !== 'false';
     
     // Default class schedule: Start 20:15, End 20:40
     // If reloaded between 20:15 and 20:40: keep end at 20:40, set start to now + 1 min
@@ -465,6 +836,15 @@ class WorkoutApp {
     if (this.elements.classEndInput) {
       this.elements.classEndInput.value = this.classEndTime;
     }
+    if (this.elements.quickTeamSelect) {
+      this.elements.quickTeamSelect.value = String(this.teamCount);
+    }
+    if (this.elements.teamCountInput) {
+      this.elements.teamCountInput.value = String(this.teamCount);
+    }
+    if (this.elements.circuitRotationInput) {
+      this.elements.circuitRotationInput.checked = this.circuitRotation;
+    }
     this.elements.minTimeInput.value = this.minTime;
     this.elements.maxTimeInput.value = this.maxTime;
     this.elements.countdownTimeInput.value = this.countdownTime;
@@ -490,6 +870,7 @@ class WorkoutApp {
     this.usedMaterials = new Set();
     this._sessionExerciseCount = 0;
     this.currentScheduleIndex = 0;
+    this.currentRotationIndex = 0;
     this._isSessionActive = false;
     this._exactStartTimestamp = null;
     try {
@@ -528,10 +909,42 @@ class WorkoutApp {
     this.updateAudioButtonUI();
   }
 
+  /**
+   * Change team count and reconfigure slot reels dynamically
+   */
+  setTeamCount(count) {
+    const newCount = Math.max(1, Math.min(8, count || 1));
+    this.teamCount = newCount;
+    this._setCookie('workout_team_count', this.teamCount);
+
+    if (this.elements.quickTeamSelect) {
+      this.elements.quickTeamSelect.value = String(this.teamCount);
+    }
+    if (this.elements.teamCountInput) {
+      this.elements.teamCountInput.value = String(this.teamCount);
+    }
+
+    if (this.elements.appMain) {
+      if (this.teamCount > 1) {
+        this.elements.appMain.classList.add('has-multi-teams');
+      } else {
+        this.elements.appMain.classList.remove('has-multi-teams');
+      }
+    }
+
+    if (this.slotMachine && this.elements.slotReelsContainer) {
+      this.slotMachine.configureTeams(this.teamCount, this.elements.slotReelsContainer);
+      this.updateReelsPool();
+    }
+
+    this.currentRotationIndex = 0;
+    this.generatePlannedSchedule(true);
+  }
+
   saveSettings() {
     let min = parseInt(this.elements.minTimeInput.value) || 30;
     let max = parseInt(this.elements.maxTimeInput.value) || 120;
-    let countdown = parseInt(this.elements.countdownTimeInput.value) || 10;
+    let countdown = parseInt(this.elements.countdownTimeInput.value) || 15;
     let classStart = this.elements.classStartInput ? this.elements.classStartInput.value : '';
     let classEnd = this.elements.classEndInput.value || '';
     let vol = parseInt(this.elements.volumeInput.value) || 200;
@@ -539,6 +952,8 @@ class WorkoutApp {
     let requireVideo = this.elements.requireVideoInput.checked;
     let noRepeatExercises = this.elements.noRepeatExercisesInput ? this.elements.noRepeatExercisesInput.checked : true;
     let noRepeatMaterials = this.elements.noRepeatMaterialsInput ? this.elements.noRepeatMaterialsInput.checked : true;
+    let teamCount = parseInt(this.elements.teamCountInput ? this.elements.teamCountInput.value : '1') || 1;
+    let circuitRotation = this.elements.circuitRotationInput ? this.elements.circuitRotationInput.checked : true;
 
     if (min < 10) min = 10;
     if (max < min) max = min;
@@ -557,6 +972,11 @@ class WorkoutApp {
     this.requireVideo = requireVideo;
     this.noRepeatExercises = noRepeatExercises;
     this.noRepeatMaterials = noRepeatMaterials;
+    this.circuitRotation = circuitRotation;
+
+    if (teamCount !== this.teamCount) {
+      this.setTeamCount(teamCount);
+    }
 
     this._setCookie('workout_min_time', this.minTime);
     this._setCookie('workout_max_time', this.maxTime);
@@ -568,6 +988,7 @@ class WorkoutApp {
     this._setCookie('workout_require_video', this.requireVideo);
     this._setCookie('workout_no_repeat_exercises', this.noRepeatExercises);
     this._setCookie('workout_no_repeat_materials', this.noRepeatMaterials);
+    this._setCookie('workout_circuit_rotation', this.circuitRotation);
     let gUrl = this.elements.googleSheetsUrlInput ? this.elements.googleSheetsUrlInput.value.trim() : this.googleSheetsUrl;
     this.googleSheetsUrl = gUrl;
     this._setCookie('workout_google_sheets_url', this.googleSheetsUrl);
@@ -1263,6 +1684,54 @@ class WorkoutApp {
    */
 
   /**
+   * Helper: Selects strictly unique materials and matching exercises for multi-team circuit stations
+   */
+  _pickMultiTeamStations(teamCount) {
+    const activeMaterials = [];
+    const activeExercisesMap = {};
+
+    for (const mat in this.database) {
+      const exs = this.database[mat].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
+        return true;
+      });
+      if (exs.length > 0) {
+        activeMaterials.push(mat);
+        activeExercisesMap[mat] = exs;
+      }
+    }
+
+    if (activeMaterials.length === 0) return [];
+
+    const selectedMaterials = [];
+    const availablePool = activeMaterials.filter(m => !this.usedMaterials.has(m));
+
+    for (let i = 0; i < teamCount; i++) {
+      let candidateList = availablePool.filter(m => !selectedMaterials.includes(m));
+      if (candidateList.length === 0) {
+        candidateList = activeMaterials.filter(m => !selectedMaterials.includes(m));
+      }
+      if (candidateList.length === 0) {
+        candidateList = activeMaterials;
+      }
+      const pickedMat = candidateList[Math.floor(Math.random() * candidateList.length)];
+      selectedMaterials.push(pickedMat);
+    }
+
+    return selectedMaterials.map((mat, idx) => {
+      let exs = activeExercisesMap[mat].filter(e => !this.usedExerciseIds.has(e.id));
+      if (exs.length === 0) exs = activeExercisesMap[mat];
+      const ex = exs[Math.floor(Math.random() * exs.length)];
+      return {
+        stationIndex: idx,
+        material: mat,
+        exercise: ex
+      };
+    });
+  }
+
+  /**
    * Generates a complete workout sequence in advance and pre-tests all videos in parallel
    */
   async generatePlannedSchedule(forceNew = false) {
@@ -1314,8 +1783,13 @@ class WorkoutApp {
 
     const minStep = Math.ceil(this.minTime / 10) * 10;
     const maxStep = Math.floor(this.maxTime / 10) * 10;
-    const avgSec = (minStep + maxStep) / 2 + this.countdownTime + 3;
-    const countNeeded = Math.max(6, Math.ceil(totalSessionSeconds / avgSec));
+    const timeChoices = [];
+    for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
+
+    const avgWorkSec = (minStep + maxStep) / 2;
+    const multiplier = this.circuitRotation ? this.teamCount : 1;
+    const roundDurationSec = (avgWorkSec + this.countdownTime + 3) * multiplier;
+    const countNeeded = Math.max(4, Math.ceil(totalSessionSeconds / roundDurationSec));
 
     const newSchedule = [];
     const usedMatSet = new Set();
@@ -1323,34 +1797,48 @@ class WorkoutApp {
     let accumSeconds = 0;
 
     for (let i = 0; i < countNeeded; i++) {
-      let candidateMaterials = activeMaterials.filter(m => !usedMatSet.has(m) && activeExercisesMap[m].some(e => !usedExIdSet.has(e.id)));
-      if (candidateMaterials.length === 0) {
-        usedMatSet.clear();
-        candidateMaterials = activeMaterials.filter(m => activeExercisesMap[m].some(e => !usedExIdSet.has(e.id)));
-        if (candidateMaterials.length === 0) {
-          usedExIdSet.clear();
-          candidateMaterials = [...activeMaterials];
-        }
-      }
-
-      const mat = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
-      let candidateExs = activeExercisesMap[mat].filter(e => !usedExIdSet.has(e.id));
-      if (candidateExs.length === 0) candidateExs = activeExercisesMap[mat];
-
-      let ex = candidateExs[Math.floor(Math.random() * candidateExs.length)];
-
-      const timeChoices = [];
-      for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
       const chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
 
-      usedMatSet.add(mat);
-      usedExIdSet.add(ex.id);
-      accumSeconds += (this.countdownTime + chosenTime + 3);
+      // Pick distinct materials for all stations in this round
+      const roundStations = [];
+      const roundMats = [];
+
+      for (let t = 0; t < this.teamCount; t++) {
+        let candidateMaterials = activeMaterials.filter(m => !roundMats.includes(m) && !usedMatSet.has(m) && activeExercisesMap[m].some(e => !usedExIdSet.has(e.id)));
+        if (candidateMaterials.length === 0) {
+          candidateMaterials = activeMaterials.filter(m => !roundMats.includes(m) && activeExercisesMap[m].some(e => !usedExIdSet.has(e.id)));
+          if (candidateMaterials.length === 0) {
+            candidateMaterials = activeMaterials.filter(m => !roundMats.includes(m));
+            if (candidateMaterials.length === 0) {
+              candidateMaterials = [...activeMaterials];
+            }
+          }
+        }
+
+        const mat = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
+        roundMats.push(mat);
+
+        let candidateExs = activeExercisesMap[mat].filter(e => !usedExIdSet.has(e.id));
+        if (candidateExs.length === 0) candidateExs = activeExercisesMap[mat];
+        const ex = candidateExs[Math.floor(Math.random() * candidateExs.length)];
+
+        usedMatSet.add(mat);
+        usedExIdSet.add(ex.id);
+
+        roundStations.push({
+          stationIndex: t,
+          material: mat,
+          exercise: ex
+        });
+      }
+
+      accumSeconds += ((this.countdownTime + chosenTime + 3) * multiplier);
 
       newSchedule.push({
-        id: ex.id,
-        exercise: ex,
-        material: mat,
+        id: roundStations[0].exercise.id,
+        exercise: roundStations[0].exercise,
+        material: roundStations[0].material,
+        stations: roundStations,
         time: chosenTime,
         status: 'pending',
         videoValid: true
@@ -1360,23 +1848,27 @@ class WorkoutApp {
     }
 
     // Fast parallel background video validation across all scheduled items
-    const validationPromises = newSchedule.map(async (item) => {
-      const vId = this._extractYouTubeId(item.exercise.video_search_url);
-      if (vId) {
-        const isValid = await this.validateYouTubeVideo(vId);
-        if (!isValid) {
-          this.brokenVideoExerciseIds.add(item.exercise.id);
-          this._saveBrokenVideos();
-          this.logBrokenVideoToGoogleSheet(item.exercise, 'Pre-scan defect gevonden');
-          const alt = allEnabled.find(a => a.id !== item.exercise.id && this._hasValidWorkingVideo(a));
-          if (alt) {
-            item.id = alt.id;
-            item.exercise = alt;
-            item.material = alt.material_name || item.material;
-            item.videoValid = true;
+    const validationPromises = [];
+    newSchedule.forEach((item) => {
+      const stationsToValidate = item.stations || [{ exercise: item.exercise, material: item.material }];
+      stationsToValidate.forEach((st) => {
+        validationPromises.push((async () => {
+          const vId = this._extractYouTubeId(st.exercise.video_search_url);
+          if (vId) {
+            const isValid = await this.validateYouTubeVideo(vId);
+            if (!isValid) {
+              this.brokenVideoExerciseIds.add(st.exercise.id);
+              this._saveBrokenVideos();
+              this.logBrokenVideoToGoogleSheet(st.exercise, 'Pre-scan defect gevonden');
+              const alt = allEnabled.find(a => a.id !== st.exercise.id && this._hasValidWorkingVideo(a));
+              if (alt) {
+                st.exercise = alt;
+                st.material = alt.material_name || st.material;
+              }
+            }
           }
-        }
-      }
+        })());
+      });
     });
 
     await Promise.all(validationPromises);
@@ -1439,10 +1931,16 @@ class WorkoutApp {
             <div class="secret-item-index">${index + 1}</div>
             ${thumb ? `<img class="secret-item-thumb" src="${thumb}" alt="${item.exercise.exercise_name}">` : ''}
             <div class="secret-item-info">
-              <div class="secret-item-name">${item.exercise.exercise_name}</div>
-              <div class="secret-item-meta">
-                <span>📦 ${item.material}</span>
-                <span class="secret-item-time-badge">${item.time}s</span>
+              <div class="secret-item-name">
+                ${(item.stations && item.stations.length > 1) 
+                  ? `Ronde ${index + 1} (${item.stations.length} Stations Circuit)` 
+                  : item.exercise.exercise_name}
+              </div>
+              <div class="secret-item-meta" style="flex-wrap:wrap; gap:0.25rem;">
+                ${(item.stations && item.stations.length > 1)
+                  ? item.stations.map((st, si) => `<span style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:0.75rem;">T${si+1}: ${st.material} - ${st.exercise.exercise_name}</span>`).join('')
+                  : `<span>📦 ${item.material}</span>`}
+                <span class="secret-item-time-badge">${item.time}s per wissel</span>
                 <span style="color:#39ff14; font-size:0.72rem;">● Video OK</span>
                 ${isCurrent ? '<span style="color:var(--neon-pink); font-weight:800;">[NU AAN DE BEURT]</span>' : ''}
                 ${isPast ? '<span style="color:#888;">[AFGEROND]</span>' : ''}
@@ -1888,74 +2386,100 @@ class WorkoutApp {
     let chosenMaterial = null;
     let chosenExercise = null;
     let chosenTime = null;
+    let chosenStations = [];
 
     if (this.currentScheduleIndex < this.plannedSchedule.length) {
       const item = this.plannedSchedule[this.currentScheduleIndex];
-      chosenMaterial = item.material;
-      chosenExercise = item.exercise;
       chosenTime = item.time;
+      if (item.stations && item.stations.length === this.teamCount) {
+        chosenStations = item.stations;
+      } else {
+        chosenStations = this._pickMultiTeamStations(this.teamCount);
+        item.stations = chosenStations;
+      }
+      chosenMaterial = chosenStations[0].material;
+      chosenExercise = chosenStations[0].exercise;
       item.status = 'active';
       this.currentScheduleIndex++;
     } else {
-      // Beyond initial schedule: add additional exercise from pool
-      await this.addExerciseToSchedule();
-      const item = this.plannedSchedule[this.plannedSchedule.length - 1];
-      chosenMaterial = item.material;
-      chosenExercise = item.exercise;
-      chosenTime = item.time;
-      item.status = 'active';
+      // Beyond initial schedule: pick time choices and multi-team stations
+      const minStep = Math.ceil(this.minTime / 10) * 10;
+      const maxStep = Math.floor(this.maxTime / 10) * 10;
+      const timeChoices = [];
+      for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
+      chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
+
+      chosenStations = this._pickMultiTeamStations(this.teamCount);
+      if (chosenStations.length === 0) {
+        await this.addExerciseToSchedule();
+        const item = this.plannedSchedule[this.plannedSchedule.length - 1];
+        chosenStations = [{ stationIndex: 0, material: item.material, exercise: item.exercise }];
+      }
+      chosenMaterial = chosenStations[0].material;
+      chosenExercise = chosenStations[0].exercise;
+
+      this.plannedSchedule.push({
+        id: chosenExercise.id,
+        exercise: chosenExercise,
+        material: chosenMaterial,
+        stations: chosenStations,
+        time: chosenTime,
+        status: 'active'
+      });
       this.currentScheduleIndex = this.plannedSchedule.length;
     }
 
     // Increment count of exercises performed in this session
     this._sessionExerciseCount++;
 
-    // Live video verification during spin
-    const videoId = this._extractYouTubeId(chosenExercise.video_search_url);
-    if (videoId) {
-      const isValid = await this.validateYouTubeVideo(videoId);
-      if (!isValid) {
-        this.brokenVideoExerciseIds.add(chosenExercise.id);
-        this._saveBrokenVideos();
-        this.logBrokenVideoToGoogleSheet(chosenExercise, 'Gedetecteerd tijdens spin');
-      }
-    }
-
-    // Track non-repeat cycle sets
-    if (this.noRepeatMaterials) {
-      this.usedMaterials.add(chosenMaterial);
-    }
-    if (this.noRepeatExercises) {
-      this.usedExerciseIds.add(chosenExercise.id);
-    }
-
-    // Cache active selection
+    // Track active stations and current circuit rotation
+    this.activeStations = chosenStations;
+    this.activeTime = chosenTime;
+    this.currentRotationIndex = 0;
+    this.activeStationPreviewIndex = 0;
     this.activeMaterial = chosenMaterial;
     this.activeExercise = chosenExercise;
-    this.activeTime = chosenTime;
 
-    // Record used history
-    this.usedHistory.push({
-      id: chosenExercise.id,
-      name: chosenExercise.exercise_name,
-      material: chosenMaterial,
-      time: chosenTime,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    });
+    // Track non-repeat cycle sets and validate videos
+    for (const st of chosenStations) {
+      if (this.noRepeatMaterials) {
+        this.usedMaterials.add(st.material);
+      }
+      if (this.noRepeatExercises) {
+        this.usedExerciseIds.add(st.exercise.id);
+      }
+
+      const videoId = this._extractYouTubeId(st.exercise.video_search_url);
+      if (videoId) {
+        this.validateYouTubeVideo(videoId).then(isValid => {
+          if (!isValid) {
+            this.brokenVideoExerciseIds.add(st.exercise.id);
+            this._saveBrokenVideos();
+            this.logBrokenVideoToGoogleSheet(st.exercise, 'Gedetecteerd tijdens spin');
+          }
+        });
+      }
+
+      // Record used history
+      this.usedHistory.push({
+        id: st.exercise.id,
+        name: st.exercise.exercise_name,
+        material: st.material,
+        time: chosenTime,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      });
+    }
+
     this._saveUsedHistory();
     this.renderSecretSchedule();
 
     // Update UI status
     this.elements.spinBtn.disabled = true;
     this.elements.adminOpenBtn.disabled = true;
-    this.elements.reel1.classList.add('active-spin');
-    this.elements.reel2.classList.add('active-spin');
-    this.elements.reel3.classList.add('active-spin');
 
     // Run animation
     this.slotMachine.spin(
-      chosenMaterial,
-      chosenExercise,
+      chosenStations,
       chosenTime,
       () => this.handleSpinComplete()
     );
@@ -1965,9 +2489,9 @@ class WorkoutApp {
    * Slot machine finish hook
    */
   handleSpinComplete() {
-    this.elements.reel1.classList.remove('active-spin');
-    this.elements.reel2.classList.remove('active-spin');
-    this.elements.reel3.classList.remove('active-spin');
+    if (this.slotMachine && this.slotMachine.reels) {
+      this.slotMachine.reels.forEach(r => r.container.classList.remove('active-spin'));
+    }
     
     // Short celebration delay, then launch countdown
     setTimeout(() => {
@@ -1979,12 +2503,10 @@ class WorkoutApp {
    * Check if current exercise is the final round of the workout session
    */
   _isCurrentExerciseLastRound() {
-    // 1. If at or past the end of the planned schedule
     if (this.plannedSchedule && this.plannedSchedule.length > 0 && this.currentScheduleIndex >= this.plannedSchedule.length) {
       return true;
     }
 
-    // 2. If remaining class time will not allow another full exercise cycle after this one
     if (this.classEndTime) {
       const [h, m] = this.classEndTime.split(':').map(Number);
       const now = new Date();
@@ -2001,20 +2523,26 @@ class WorkoutApp {
   }
 
   /**
-   * Start the countdown phase
+   * Switch the video and instruction preview to a specific station
    */
-  startCountdown() {
-    this.switchView('countdown');
-    
-    // Set exercise info in right panel
-    this.elements.hudExerciseName.textContent = this.activeExercise.exercise_name;
-    this.elements.hudMaterialInfo.textContent = this.activeMaterial;
-    this.elements.instructionText.textContent = this.activeExercise.instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.";
+  updatePreviewStation(stationIdx) {
+    if (!this.activeStations || this.activeStations.length === 0) return;
+    const station = this.activeStations[stationIdx] || this.activeStations[0];
+    this.activeStationPreviewIndex = stationIdx;
 
-    // Always display the exercise technique thumbnail preview
-    const rawUrl = (this.activeExercise.video_search_url || '').trim();
+    this.activeExercise = station.exercise;
+    this.activeMaterial = station.material;
+
+    // Set exercise info in single video overlay
+    if (this.elements.hudExerciseName) this.elements.hudExerciseName.textContent = station.exercise.exercise_name;
+    if (this.elements.hudMaterialInfo) this.elements.hudMaterialInfo.textContent = station.material;
+    if (this.elements.instructionText) {
+      this.elements.instructionText.textContent = station.exercise.instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.";
+    }
+
+    const rawUrl = (station.exercise.video_search_url || '').trim();
     const videoId = this._extractYouTubeId(rawUrl);
-    const thumb = (this.activeExercise.thumbnail || '').trim() || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
+    const thumb = (station.exercise.thumbnail || '').trim() || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
 
     if (this.elements.instructionThumbImg) {
       if (thumb) {
@@ -2028,14 +2556,102 @@ class WorkoutApp {
       }
     }
 
+    this._loadYouTubeIframe();
+
+    // Update active tab styling
+    if (this.elements.stationsTrackerBar) {
+      const tabs = this.elements.stationsTrackerBar.querySelectorAll('.station-tab');
+      tabs.forEach((tab, i) => {
+        tab.classList.toggle('active-preview', i === stationIdx);
+      });
+    }
+  }
+
+  /**
+   * Render Circuit Rotation Badge, Tracker Bar tabs, and Glanceable Overview Panel
+   */
+  renderStationsHUD() {
+    const T = this.teamCount;
+
+    // 1. Rotation badge above timer
+    if (this.elements.circuitRotationBadge) {
+      if (this.circuitRotation && T > 1) {
+        this.elements.circuitRotationBadge.textContent = `WISSEL ${this.currentRotationIndex + 1} / ${T}`;
+        this.elements.circuitRotationBadge.style.display = 'inline-block';
+      } else {
+        this.elements.circuitRotationBadge.style.display = 'none';
+      }
+    }
+
+    // 2. Stations Switcher Bar
+    if (this.elements.stationsTrackerBar) {
+      if (T > 1 && this.activeStations && this.activeStations.length > 0) {
+        this.elements.stationsTrackerBar.style.display = 'flex';
+        this.elements.stationsTrackerBar.innerHTML = this.activeStations.map((station, sIdx) => {
+          // Team currently at station sIdx: with circuit rotation, rotate; otherwise 1:1
+          const teamIdx = this.circuitRotation ? ((sIdx - this.currentRotationIndex + T) % T) : sIdx;
+          const teamNum = teamIdx + 1;
+          const isSelected = (sIdx === this.activeStationPreviewIndex);
+
+          return `
+            <div class="station-tab ${isSelected ? 'active-preview' : ''}" onclick="window.workoutApp.updatePreviewStation(${sIdx})">
+              <div class="station-tab-header">
+                <span class="station-tab-num">STATION ${sIdx + 1}</span>
+                <span class="station-tab-team team-${teamNum}">TEAM ${teamNum}</span>
+              </div>
+              <div class="station-tab-name">${station.exercise.exercise_name}</div>
+              <div class="station-tab-mat">${station.material}</div>
+            </div>
+          `;
+        }).join('');
+      } else {
+        this.elements.stationsTrackerBar.style.display = 'none';
+        this.elements.stationsTrackerBar.innerHTML = '';
+      }
+    }
+
+    // 3. Stations Overview Panel below instructions
+    if (this.elements.stationsOverviewPanel) {
+      if (T > 1 && this.activeStations && this.activeStations.length > 0) {
+        this.elements.stationsOverviewPanel.style.display = 'grid';
+        this.elements.stationsOverviewPanel.innerHTML = this.activeStations.map((station, sIdx) => {
+          const teamIdx = this.circuitRotation ? ((sIdx - this.currentRotationIndex + T) % T) : sIdx;
+          const teamNum = teamIdx + 1;
+          return `
+            <div class="station-chip team-chip-${teamNum}">
+              <div class="station-chip-header">
+                <span class="station-chip-team">TEAM ${teamNum}</span>
+                <span class="station-chip-num">STATION ${sIdx + 1}</span>
+              </div>
+              <div class="station-chip-ex">${station.exercise.exercise_name}</div>
+              <div class="station-chip-mat">${station.material}</div>
+            </div>
+          `;
+        }).join('');
+      } else {
+        this.elements.stationsOverviewPanel.style.display = 'none';
+        this.elements.stationsOverviewPanel.innerHTML = '';
+      }
+    }
+  }
+
+  /**
+   * Start the countdown phase
+   */
+  startCountdown() {
+    this.switchView('countdown');
+
+    // Render stations tracker and overview
+    this.renderStationsHUD();
+
+    // Update right panel preview to active station
+    this.updatePreviewStation(this.activeStationPreviewIndex);
+
     // Set initial countdown number in unified timer
     this.elements.timerDigits.textContent = this.countdownTime;
 
-    // Load YouTube iframe NOW (during countdown) so it's already playing when workout starts
-    this._loadYouTubeIframe();
-
-    const isFirstRound = (this._sessionExerciseCount === 1);
-    const isLastRound = this._isCurrentExerciseLastRound();
+    const isFirstRound = (this._sessionExerciseCount === 1 && this.currentRotationIndex === 0);
+    const isLastRound = this._isCurrentExerciseLastRound() && (this.currentRotationIndex === this.teamCount - 1);
 
     this.timer.start(this.activeTime, {
       countdownDuration: this.countdownTime,
@@ -2043,8 +2659,16 @@ class WorkoutApp {
       isLastRound: isLastRound,
 
       onCountdownTick: (secs) => {
-        // Just update the unified timer digits — no separate countdown element needed
-        this.elements.timerDigits.textContent = secs;
+        if (this.elements.timerDigits) this.elements.timerDigits.textContent = secs;
+        if (this.elements.timerProgressFill) {
+          const cdPercent = Math.max(0, Math.min(100, (secs / (this.countdownTime || 15)) * 100));
+          this.elements.timerProgressFill.style.width = `${cdPercent}%`;
+          if (secs <= 3) {
+            this.elements.timerProgressFill.classList.add('low-time');
+          } else {
+            this.elements.timerProgressFill.classList.remove('low-time');
+          }
+        }
       },
 
       onStateChange: (state) => {
@@ -2069,13 +2693,24 @@ class WorkoutApp {
   startWorkoutHUD() {
     this.switchView('active');
 
-    // Setup circular progress ring
-    const circle = this.elements.timerProgressCircle;
-    const radius = circle.r.baseVal.value;
-    const circumference = 2 * Math.PI * radius;
-    circle.style.strokeDasharray = `${circumference} ${circumference}`;
-    circle.style.strokeDashoffset = circumference;
-    circle.classList.remove('low-time');
+    // Setup progress bar
+    if (this.elements.timerProgressFill) {
+      this.elements.timerProgressFill.style.width = '100%';
+      this.elements.timerProgressFill.classList.remove('low-time');
+    }
+    if (this.elements.timerDigits) {
+      this.elements.timerDigits.classList.remove('low-time');
+    }
+
+    // Setup circular progress ring (if present)
+    if (this.elements.timerProgressCircle) {
+      const circle = this.elements.timerProgressCircle;
+      const radius = circle.r ? circle.r.baseVal.value : 220;
+      const circumference = 2 * Math.PI * radius;
+      circle.style.strokeDasharray = `${circumference} ${circumference}`;
+      circle.style.strokeDashoffset = circumference;
+      circle.classList.remove('low-time');
+    }
 
     // Reset Play/Pause trainer button
     this.elements.btnPause.innerHTML = '⏸ <span style="margin-left:5px;">PAUZE</span>';
@@ -2097,10 +2732,105 @@ class WorkoutApp {
     if (slot) slot.classList.add('use-fallback');
   }
 
+  /**
+   * Render all team YouTube videos simultaneously in a multi-video grid
+   */
+  _renderMultiVideoGrid() {
+    if (!this.elements.multiVideoGrid) return;
+    const grid = this.elements.multiVideoGrid;
+    const T = this.teamCount;
+
+    grid.className = `multi-video-grid grid-teams-${T}`;
+    grid.innerHTML = '';
+
+    if (!this.activeStations || this.activeStations.length === 0) return;
+
+    for (let teamIdx = 0; teamIdx < T; teamIdx++) {
+      const teamNum = teamIdx + 1;
+      // Calculate current station index for this team given circuit rotation or fixed stations
+      const stationIdx = this.circuitRotation ? ((teamIdx + this.currentRotationIndex) % T) : teamIdx;
+      const station = this.activeStations[stationIdx] || this.activeStations[0];
+      const ex = station.exercise;
+      const mat = station.material;
+
+      const rawUrl = (ex.video_search_url || '').trim();
+      const videoId = this._extractYouTubeId(rawUrl);
+      const isBroken = this.brokenVideoExerciseIds.has(ex.id);
+      const thumb = (ex.thumbnail || '').trim() || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
+
+      const card = document.createElement('div');
+      card.className = `team-video-card team-card-${teamNum}`;
+
+      let playerMarkup = '';
+      if (videoId && !isBroken) {
+        const params = new URLSearchParams({
+          autoplay:       '1',
+          mute:           '1',
+          loop:           '1',
+          playlist:       videoId,
+          controls:       '0',
+          modestbranding: '1',
+          rel:            '0',
+          iv_load_policy: '3',
+          fs:             '0',
+          playsinline:    '1',
+          enablejsapi:    '1',
+          origin:         window.location.origin
+        });
+        playerMarkup = `
+          <iframe
+            src="https://www.youtube.com/embed/${videoId}?${params.toString()}"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            referrerpolicy="strict-origin-when-cross-origin"
+            allowfullscreen
+          ></iframe>
+        `;
+      } else {
+        playerMarkup = `
+          <img class="team-video-fallback" src="${thumb || ''}" alt="${ex.exercise_name}" style="${thumb ? 'display:block;' : 'display:none;'}">
+        `;
+      }
+
+      card.innerHTML = `
+        <div class="team-video-header">
+          <span class="team-video-badge team-badge-${teamNum}">
+            <span class="team-dot"></span> TEAM ${teamNum}
+          </span>
+          <div class="team-video-info">
+            <span class="team-video-ex-title" title="${ex.exercise_name}">${ex.exercise_name}</span>
+            <span class="team-video-mat-title">📦 ${mat}</span>
+          </div>
+          <span class="team-video-station-num">STATION ${stationIdx + 1}</span>
+        </div>
+        <div class="team-video-player-wrap">
+          ${playerMarkup}
+        </div>
+      `;
+
+      grid.appendChild(card);
+    }
+  }
+
   _loadYouTubeIframe() {
+    if (this.teamCount > 1) {
+      if (this.elements.singleTeamHudWrapper) this.elements.singleTeamHudWrapper.style.display = 'none';
+      if (this.elements.multiVideoGrid) {
+        this.elements.multiVideoGrid.style.display = 'grid';
+        this._renderMultiVideoGrid();
+      }
+      return;
+    }
+
+    // Single team mode
+    if (this.elements.multiVideoGrid) this.elements.multiVideoGrid.style.display = 'none';
+    if (this.elements.singleTeamHudWrapper) this.elements.singleTeamHudWrapper.style.display = 'block';
+
     const iframe = this.elements.workoutIframe;
     const fallback = this.elements.videoFallbackImg;
     const slot = this.elements.videoSlot;
+
+    if (!this.activeExercise) return;
 
     const rawUrl = (this.activeExercise.video_search_url || '').trim();
     const videoId = this._extractYouTubeId(rawUrl);
@@ -2155,32 +2885,53 @@ class WorkoutApp {
     const iframe = this.elements.workoutIframe;
     if (iframe) iframe.src = '';
     this._hideVideoFrame();
+    if (this.elements.multiVideoGrid) {
+      const iframes = this.elements.multiVideoGrid.querySelectorAll('iframe');
+      iframes.forEach(f => { f.src = ''; });
+    }
   }
 
   /**
    * Update circular ring progress and digital clock text
    */
   updateHUDTimer(secondsRemaining) {
-    this.elements.timerDigits.textContent = secondsRemaining;
+    if (this.elements.timerDigits) {
+      this.elements.timerDigits.textContent = secondsRemaining;
+      if (secondsRemaining <= 5) {
+        this.elements.timerDigits.classList.add('low-time');
+      } else {
+        this.elements.timerDigits.classList.remove('low-time');
+      }
+    }
     
-    // Calculate progress offset
-    const circle = this.elements.timerProgressCircle;
-    const radius = circle.r.baseVal.value;
-    const circumference = 2 * Math.PI * radius;
-    const progress = this.timer.getProgress();
-    
-    const offset = circumference - (progress * circumference);
-    circle.style.strokeDashoffset = offset;
+    // Calculate progress (0.0 to 1.0)
+    const progress = this.timer ? this.timer.getProgress() : 0;
+    const fillPercent = Math.max(0, Math.min(100, (1 - progress) * 100));
 
-    // Visual urgency effect: last 5 seconds glow pink
-    if (secondsRemaining <= 5) {
-      circle.classList.add('low-time');
-    } else {
-      circle.classList.remove('low-time');
+    // Update full-width horizontal progress bar
+    if (this.elements.timerProgressFill) {
+      this.elements.timerProgressFill.style.width = `${fillPercent}%`;
+      if (secondsRemaining <= 5) {
+        this.elements.timerProgressFill.classList.add('low-time');
+      } else {
+        this.elements.timerProgressFill.classList.remove('low-time');
+      }
+    }
+
+    // Calculate circular ring progress (if present)
+    if (this.elements.timerProgressCircle) {
+      const circle = this.elements.timerProgressCircle;
+      const radius = circle.r ? circle.r.baseVal.value : 220;
+      const circumference = 2 * Math.PI * radius;
+      const offset = circumference - (progress * circumference);
+      circle.style.strokeDashoffset = offset;
+      if (secondsRemaining <= 5) {
+        circle.classList.add('low-time');
+      } else {
+        circle.classList.remove('low-time');
+      }
     }
   }
-
-
 
   /**
    * Trainer Controls - Pause / Resume
@@ -2188,13 +2939,11 @@ class WorkoutApp {
   toggleWorkoutPause() {
     if (this.timer.state === 'RUNNING' || this.timer.state === 'COUNTDOWN') {
       this.timer.pause();
-      // Pause YouTube: unload the iframe src so video stops
       this._stopYouTubeIframe();
       this.elements.btnPause.innerHTML = '▶ <span style="margin-left: 5px;">VERVOLG</span>';
       this.elements.btnPause.className = 'btn btn-pink';
     } else if (this.timer.state === 'PAUSED') {
       this.timer.resume();
-      // Resume: reload the YouTube iframe
       this._loadYouTubeIframe();
       this.elements.btnPause.innerHTML = '⏸ <span style="margin-left: 5px;">PAUZE</span>';
       this.elements.btnPause.className = 'btn btn-cyan';
@@ -2204,6 +2953,12 @@ class WorkoutApp {
   /**
    * Trainer Controls - Skip
    */
+  skipWorkout() {
+    if (this.timer.state === 'RUNNING' || this.timer.state === 'PAUSED' || this.timer.state === 'COUNTDOWN') {
+      this.timer.skip();
+    }
+  }
+
   handleWorkoutSkip() {
     this.timer.stop();
     this._stopYouTubeIframe();
@@ -2224,37 +2979,114 @@ class WorkoutApp {
   }
 
   /**
-   * Handle workout complete phase
+   * Handle workout complete phase with circuit station rotations
    */
   handleWorkoutComplete() {
     this._stopYouTubeIframe();
 
+    const T = this.teamCount;
+
+    // 🔄 CHECK IF MORE ROTATIONS REMAIN IN THIS ROUND
+    if (this.circuitRotation && T > 1 && this.currentRotationIndex < T - 1) {
+      if (window.audioEngine) window.audioEngine.playSwitch();
+
+      const nextRot = this.currentRotationIndex + 1;
+      const overlay = this.elements.finishedOverlay;
+
+      if (this.elements.finishedOverlayTitle) {
+        this.elements.finishedOverlayTitle.textContent = "DOORWISSELEN! 🔄";
+      }
+      if (this.elements.finishedExercise) {
+        this.elements.finishedExercise.textContent = `Wissel naar het volgende station (${this.currentRotationIndex + 1} ➔ ${nextRot + 1} van ${T})`;
+      }
+
+      // Build rotation transition cards showing clearly which team does which exercise
+      if (this.elements.finishedRotationDetails) {
+        this.elements.finishedRotationDetails.style.display = 'grid';
+        let detailsHtml = '';
+        for (let teamIdx = 0; teamIdx < T; teamIdx++) {
+          const teamNum = teamIdx + 1;
+          const nextStationIndex = (teamIdx + nextRot) % T;
+          const nextStationNum = nextStationIndex + 1;
+          const targetStation = this.activeStations[nextStationIndex] || this.activeStations[0];
+          const exName = targetStation.exercise.exercise_name || "Oefening";
+          const matName = targetStation.material || "Materiaal";
+
+          detailsHtml += `
+            <div class="rotation-team-card team-border-${teamNum}">
+              <div class="rotation-team-card-header">
+                <span class="rotation-team-badge team-badge-${teamNum}">
+                  <span class="team-dot"></span> TEAM ${teamNum}
+                </span>
+                <span class="rotation-station-label">Station ${nextStationNum}</span>
+              </div>
+              <div class="rotation-team-ex-name">${exName}</div>
+              <div class="rotation-team-mat">📦 ${matName}</div>
+            </div>
+          `;
+        }
+        this.elements.finishedRotationDetails.innerHTML = detailsHtml;
+      }
+
+      overlay.classList.add('show');
+
+      // Advance rotation index & rotate station preview
+      this.currentRotationIndex = nextRot;
+      this.activeStationPreviewIndex = (this.activeStationPreviewIndex + 1) % T;
+
+      // 4.5s transition display so teams can clearly see their new exercise and station
+      setTimeout(() => {
+        overlay.classList.remove('show');
+        if (this.elements.finishedRotationDetails) {
+          this.elements.finishedRotationDetails.style.display = 'none';
+        }
+        if (this.elements.finishedOverlayTitle) {
+          this.elements.finishedOverlayTitle.textContent = "LEKKER BEZIG! 🔥";
+        }
+
+        // Start countdown for next station directly
+        this.startCountdown();
+      }, 4500);
+
+      return;
+    }
+
+    // ── ALL ROTATIONS COMPLETE FOR THIS ROUND ──
     const isClassFinished = this._isClassFinished();
 
     if (isClassFinished) {
-      // 🏆 END OF TRAINING: Play finish audio & show grand celebration modal!
       if (window.audioEngine) window.audioEngine.playFinish();
       this.autoPlay = false;
       this.updateAutoPlayUI();
       this.showClassFinishedModal();
     } else {
-      // 🔄 NORMAL EXERCISE SWITCH: Play rest_switch_start audio & show 3-second flash overlay
       if (window.audioEngine) window.audioEngine.playSwitch();
 
       const overlay = this.elements.finishedOverlay;
-      const exName = this.activeExercise ? this.activeExercise.exercise_name : 'Oefening';
-      this.elements.finishedExercise.textContent = `${exName} afgerond. Wissel naar volgende!`;
+      if (this.elements.finishedOverlayTitle) {
+        this.elements.finishedOverlayTitle.textContent = "RONDE VOLTOOID! 🔥";
+      }
+      if (this.elements.finishedExercise) {
+        this.elements.finishedExercise.textContent = (T > 1)
+          ? `Alle ${T} teams hebben alle stations afgerond! Klaar voor de volgende ronde.`
+          : `${this.activeExercise ? this.activeExercise.exercise_name : 'Oefening'} afgerond. Wissel naar volgende!`;
+      }
+      if (this.elements.finishedRotationDetails) {
+        this.elements.finishedRotationDetails.style.display = 'none';
+      }
       overlay.classList.add('show');
 
       // Hide after 3 seconds, then return to idle or auto-spin
       setTimeout(() => {
         overlay.classList.remove('show');
+        if (this.elements.finishedOverlayTitle) {
+          this.elements.finishedOverlayTitle.textContent = "LEKKER BEZIG! 🔥";
+        }
 
         this.elements.spinBtn.disabled = false;
         this.elements.adminOpenBtn.disabled = false;
 
         if (this.autoPlay && !this._isClassFinished()) {
-          // Auto-spin after brief pause on idle
           this.switchView('idle');
           setTimeout(() => {
             if (this.autoPlay && !this._isClassFinished()) this.handleSpin();
@@ -2375,10 +3207,17 @@ class WorkoutApp {
    * Resets all bottom panel labels to a clean standby look
    */
   setStandbyState() {
-    this.elements.hudExerciseName.textContent = "DRUK OP SPIN";
-    this.elements.hudMaterialInfo.textContent = "---";
-    this.elements.instructionText.textContent = "Druk op de roze SPIN knop om een willekeurige oefening te selecteren.";
-    this.elements.timerDigits.textContent = "00";
+    if (this.elements.hudExerciseName) this.elements.hudExerciseName.textContent = "DRUK OP SPIN";
+    if (this.elements.hudMaterialInfo) this.elements.hudMaterialInfo.textContent = "---";
+    if (this.elements.instructionText) this.elements.instructionText.textContent = "Druk op de roze SPIN knop om een willekeurige oefening te selecteren.";
+    if (this.elements.timerDigits) {
+      this.elements.timerDigits.textContent = "--";
+      this.elements.timerDigits.classList.remove('low-time');
+    }
+    if (this.elements.timerProgressFill) {
+      this.elements.timerProgressFill.style.width = '100%';
+      this.elements.timerProgressFill.classList.remove('low-time');
+    }
     if (this.elements.timerProgressCircle) {
       this.elements.timerProgressCircle.style.strokeDashoffset = '0';
     }

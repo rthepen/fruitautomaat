@@ -392,6 +392,36 @@ class AudioEngine {
   }
 
   /**
+   * Positive success chime (for database sync, achievements)
+   */
+  playWin() {
+    if (this.muted) return;
+    this.resumeContext();
+    if (!this.ctx) return;
+
+    try {
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      notes.forEach((freq, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.connect(gain);
+        gain.connect(this.masterGain || this.ctx.destination);
+
+        osc.type = 'triangle';
+        const startTime = this.ctx.currentTime + idx * 0.08;
+        osc.frequency.setValueAtTime(freq, startTime);
+
+        gain.gain.setValueAtTime(0.18, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.35);
+
+        osc.start(startTime);
+        osc.stop(startTime + 0.4);
+      });
+    } catch (e) {}
+  }
+
+  /**
    * Workout finish cue ("Lekker gewerkt / training voltooid!")
    */
   async playFinish() {
