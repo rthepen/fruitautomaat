@@ -143,17 +143,25 @@ class WorkoutApp {
     this.googleSheetsUrl = 'https://script.google.com/macros/s/AKfycbx6ccQx8Cobis3AF45-Gxg5GrkTCyPDn6KS32XykObIhMHD-aaWeElO2tD61UC9Ud4Vxw/exec';
     this._loggedSheetIds = new Set();        // Prevent duplicate logs in same session
     
-    // Multi-team Circuit state
+    // Multi-team Circuit state & Per-team Tracking
     this.teamCount = 1;               // Number of teams (1 to 8)
     this.circuitRotation = true;      // true = teams rotate stations; false = fresh spin every round
     this.currentRotationIndex = 0;    // Active circuit station rotation (0 to teamCount - 1)
     this.activeStations = [];         // Active round stations: [{ stationIndex, material, exercise }]
     this.activeStationPreviewIndex = 0; // Station shown in preview player
+    this.teamData = [];               // Per-team tracker: [{ usedMaterials: Set, materialCounts: {}, usedExerciseIds: Set, exerciseCounts: {}, history: [] }]
+    this.globalMaterialCounts = {};   // Track usage count per material across all teams for global fairness
+    this._usedHistoryTeamFilter = -1; // -1 = all teams, 0..7 = team index filter
+    this._initTeamData(true);
 
     // Active selection
     this.activeMaterial = null;
     this.activeExercise = null;
     this.activeTime = 0;
+    this.currentState = 'idle';       // 'idle', 'countdown', 'active'
+    this._pendingTeamCount = null;    // Queued team count change to apply between rounds
+    this._pendingReelsUpdate = false; // Flag to rebuild reels pool between rounds
+    this._toastTimer = null;          // Notification timer
     
     // Components
     this.slotMachine = null;
@@ -333,6 +341,7 @@ class WorkoutApp {
       classStatMaterials: document.getElementById('class-stat-materials'),
       classFinishedNewBtn: document.getElementById('class-finished-new-btn'),
       classFinishedCloseBtn: document.getElementById('class-finished-close-btn'),
+      classFinishedTeamsSummary: document.getElementById('class-finished-teams-summary'),
 
       // Multi-Team & Circuit Elements
       singleTeamHudWrapper: document.getElementById('single-team-hud-wrapper'),
@@ -368,19 +377,54 @@ class WorkoutApp {
     // Teams Selectors
     if (this.elements.quickTeamSelect) {
       this.elements.quickTeamSelect.addEventListener('change', (e) => {
-        this.setTeamCount(parseInt(e.target.value));
+        const newCount = parseInt(e.target.value);
+        const isWorkoutActive = (this.currentState === 'countdown' || this.currentState === 'active');
+        if (isWorkoutActive) {
+          this._pendingTeamCount = newCount;
+          this._setCookie('workout_team_count', newCount);
+          this.showToast(`✓ Teams aangepast naar ${newCount}! Actief vanaf de volgende ronde.`);
+        } else {
+          this.setTeamCount(newCount);
+        }
       });
     }
     if (this.elements.teamCountInput) {
       this.elements.teamCountInput.addEventListener('change', (e) => {
-        this.setTeamCount(parseInt(e.target.value));
+        const newCount = parseInt(e.target.value);
+        const isWorkoutActive = (this.currentState === 'countdown' || this.currentState === 'active');
+        if (isWorkoutActive) {
+          this._pendingTeamCount = newCount;
+          this._setCookie('workout_team_count', newCount);
+        }
       });
     }
     if (this.elements.circuitRotationInput) {
       this.elements.circuitRotationInput.addEventListener('change', (e) => {
         this.circuitRotation = e.target.checked;
         this._setCookie('workout_circuit_rotation', this.circuitRotation);
-        this.generatePlannedSchedule(true);
+      });
+    }
+
+    // Direct Realtime Audio Controls (volume slider & coach voice)
+    if (this.elements.volumeInput) {
+      const onVolChange = (e) => {
+        const val = parseInt(e.target.value) || 0;
+        this.volume = Math.max(0, Math.min(300, val)) / 100;
+        if (window.audioEngine) {
+          window.audioEngine.setVolume(this.volume);
+        }
+        this._setCookie('workout_volume', this.volume);
+      };
+      this.elements.volumeInput.addEventListener('input', onVolChange);
+      this.elements.volumeInput.addEventListener('change', onVolChange);
+    }
+    if (this.elements.coachSelect) {
+      this.elements.coachSelect.addEventListener('change', (e) => {
+        this.coach = e.target.value || 'tabataman';
+        if (window.audioEngine) {
+          window.audioEngine.setCoach(this.coach);
+        }
+        this._setCookie('workout_coach', this.coach);
       });
     }
 
@@ -409,7 +453,7 @@ class WorkoutApp {
       this.elements.classFinishedCloseBtn.addEventListener('click', () => this.hideClassFinishedModal());
     }
     
-    // Admin Toggle
+    // Admin Toggle (always accessible during workout)
     this.elements.adminOpenBtn.addEventListener('click', () => this.openAdmin(true));
     this.elements.adminCloseBtn.addEventListener('click', () => this.openAdmin(false));
     this.elements.scrim.addEventListener('click', () => {
@@ -426,10 +470,7 @@ class WorkoutApp {
     
     // Save Admin Config
     this.elements.adminSaveBtn.addEventListener('click', () => {
-      this.disabledExerciseIds = new Set(this.tempDisabledExerciseIds);
       this.saveSettings();
-      this.updateReelsPool();
-      this.generatePlannedSchedule(true);
       this.openAdmin(false);
     });
 
@@ -873,8 +914,11 @@ class WorkoutApp {
     this.currentRotationIndex = 0;
     this._isSessionActive = false;
     this._exactStartTimestamp = null;
+    this._initTeamData(false);
     try {
       localStorage.removeItem('workout_used_history');
+      localStorage.removeItem('workout_team_data');
+      localStorage.removeItem('workout_global_material_counts');
     } catch (e) {}
 
     // Disabled exercises
@@ -974,21 +1018,37 @@ class WorkoutApp {
     this.noRepeatMaterials = noRepeatMaterials;
     this.circuitRotation = circuitRotation;
 
-    if (teamCount !== this.teamCount) {
-      this.setTeamCount(teamCount);
+    // 1. Direct Realtime Settings (Audio & Coach)
+    this.volume = vol / 100;
+    this.coach = coach;
+    if (window.audioEngine) {
+      window.audioEngine.setCoach(this.coach);
+      window.audioEngine.setVolume(this.volume);
     }
+    this._setCookie('workout_volume', this.volume);
+    this._setCookie('workout_coach', this.coach);
+
+    // 2. Commit parameter changes for future workouts
+    this.minTime = min;
+    this.maxTime = max;
+    this.countdownTime = countdown;
+    this.classStartTime = classStart;
+    this.classEndTime = classEnd;
+    this.requireVideo = requireVideo;
+    this.noRepeatExercises = noRepeatExercises;
+    this.noRepeatMaterials = noRepeatMaterials;
+    this.circuitRotation = circuitRotation;
 
     this._setCookie('workout_min_time', this.minTime);
     this._setCookie('workout_max_time', this.maxTime);
     this._setCookie('workout_countdown_time', this.countdownTime);
     this._setCookie('workout_class_start', this.classStartTime);
     this._setCookie('workout_class_end', this.classEndTime);
-    this._setCookie('workout_volume', this.volume);
-    this._setCookie('workout_coach', this.coach);
     this._setCookie('workout_require_video', this.requireVideo);
     this._setCookie('workout_no_repeat_exercises', this.noRepeatExercises);
     this._setCookie('workout_no_repeat_materials', this.noRepeatMaterials);
     this._setCookie('workout_circuit_rotation', this.circuitRotation);
+
     let gUrl = this.elements.googleSheetsUrlInput ? this.elements.googleSheetsUrlInput.value.trim() : this.googleSheetsUrl;
     this.googleSheetsUrl = gUrl;
     this._setCookie('workout_google_sheets_url', this.googleSheetsUrl);
@@ -996,8 +1056,37 @@ class WorkoutApp {
       localStorage.setItem('workout_google_sheets_url', this.googleSheetsUrl);
     } catch (e) {}
 
-    if (window.audioEngine) {
-      window.audioEngine.setCoach(this.coach);
+    // Save disabled exercises
+    if (this.tempDisabledExerciseIds) {
+      this.disabledExerciseIds = new Set(this.tempDisabledExerciseIds);
+    }
+    this._setCookie('workout_disabled_exercises', JSON.stringify(Array.from(this.disabledExerciseIds)));
+
+    // 3. Check if training is currently running
+    const isWorkoutActive = (this.currentState === 'countdown' || this.currentState === 'active' || (this.timer && this.timer.isRunning));
+
+    if (isWorkoutActive) {
+      // Training is actively running: queue team count change if altered so current station continues uninterrupted
+      if (teamCount !== this.teamCount) {
+        this._pendingTeamCount = teamCount;
+        this._setCookie('workout_team_count', teamCount);
+      }
+      this._pendingReelsUpdate = true;
+      // Re-plan future rounds from currentScheduleIndex onward
+      this.generatePlannedSchedule(true);
+      this.showToast("✓ Instellingen opgeslagen! Actief vanaf de volgende oefening.");
+    } else {
+      // Idle: apply team count and reels immediately
+      if (teamCount !== this.teamCount) {
+        this.setTeamCount(teamCount);
+      }
+      this.updateReelsPool();
+      this.generatePlannedSchedule(true);
+      if (this.elements.timerDigits) {
+        this.elements.timerDigits.textContent = this.countdownTime;
+      }
+      this.renderStationsHUD();
+      this.showToast("✓ Instellingen opgeslagen!");
     }
 
     // Clear tracking if toggled off
@@ -1009,14 +1098,6 @@ class WorkoutApp {
     }
     this._saveUsedHistory();
 
-    // Apply volume to audio engine
-    if (window.audioEngine) {
-      window.audioEngine.setVolume(this.volume);
-    }
-
-    // Save disabled exercises
-    this._setCookie('workout_disabled_exercises', JSON.stringify(Array.from(this.disabledExerciseIds)));
-
     // Update clock with new end time
     this.startClassClock();
     // Update used history UI
@@ -1024,11 +1105,94 @@ class WorkoutApp {
   }
 
   /**
-   * Save and render used pool items
+   * Initializes per-team tracking state for up to 8 teams
+   */
+  _initTeamData(keepExisting = true) {
+    if (!this.teamData) this.teamData = [];
+    for (let t = 0; t < 8; t++) {
+      if (!this.teamData[t] || !keepExisting) {
+        this.teamData[t] = {
+          usedMaterials: new Set(),
+          materialCounts: {},
+          usedExerciseIds: new Set(),
+          exerciseCounts: {},
+          history: []
+        };
+      }
+    }
+    if (!this.globalMaterialCounts || !keepExisting) {
+      this.globalMaterialCounts = {};
+    }
+  }
+
+  /**
+   * Records usage of an exercise and material for a specific team
+   */
+  _recordTeamUsage(teamIdx, material, exercise, time, stationNum) {
+    if (!this.teamData[teamIdx]) this._initTeamData(true);
+    const td = this.teamData[teamIdx];
+    td.usedMaterials.add(material);
+    td.materialCounts[material] = (td.materialCounts[material] || 0) + 1;
+    td.usedExerciseIds.add(exercise.id);
+    td.exerciseCounts[exercise.id] = (td.exerciseCounts[exercise.id] || 0) + 1;
+
+    td.history.push({
+      round: this._sessionExerciseCount,
+      teamIndex: teamIdx,
+      teamNum: teamIdx + 1,
+      stationNum: stationNum,
+      material: material,
+      exerciseName: exercise.exercise_name,
+      exerciseId: exercise.id,
+      time: time,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+
+    this.globalMaterialCounts[material] = (this.globalMaterialCounts[material] || 0) + 1;
+
+    if (this.noRepeatMaterials) {
+      this.usedMaterials.add(material);
+    }
+    if (this.noRepeatExercises) {
+      this.usedExerciseIds.add(exercise.id);
+    }
+
+    this.usedHistory.push({
+      id: exercise.id,
+      name: exercise.exercise_name,
+      material: material,
+      teamIndex: teamIdx,
+      teamNum: teamIdx + 1,
+      stationNum: stationNum,
+      time: time,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    });
+  }
+
+  /**
+   * Filter used history display by team
+   */
+  filterUsedHistory(teamIdx) {
+    this._usedHistoryTeamFilter = teamIdx;
+    this.renderUsedHistory();
+  }
+
+  /**
+   * Save and render used pool items and per-team state
    */
   _saveUsedHistory() {
     try {
       localStorage.setItem('workout_used_history', JSON.stringify(this.usedHistory));
+
+      const serializableTeamData = this.teamData.map(td => ({
+        usedMaterials: Array.from(td.usedMaterials || []),
+        materialCounts: td.materialCounts || {},
+        usedExerciseIds: Array.from(td.usedExerciseIds || []),
+        exerciseCounts: td.exerciseCounts || {},
+        history: td.history || []
+      }));
+      localStorage.setItem('workout_team_data', JSON.stringify(serializableTeamData));
+      localStorage.setItem('workout_global_material_counts', JSON.stringify(this.globalMaterialCounts));
     } catch (e) {}
   }
 
@@ -1036,7 +1200,9 @@ class WorkoutApp {
     this.usedExerciseIds.clear();
     this.usedMaterials.clear();
     this.usedHistory = [];
+    this._initTeamData(false);
     this._saveUsedHistory();
+    this.generatePlannedSchedule(true);
     this.renderUsedHistory();
   }
 
@@ -1058,28 +1224,93 @@ class WorkoutApp {
       }
     }
 
+    const T = this.teamCount;
+    const modeText = this.circuitRotation
+      ? "Doordraaien (alle teams wisselen stations)"
+      : "Unieke Oefeningen Per Team (geen doordraaien)";
+
     // Render Stats Badges
-    this.elements.usedHistoryStats.innerHTML = `
-      <span class="used-history-badge">Oefeningen geweest: ${this.usedExerciseIds.size} / ${totalExercises}</span>
-      <span class="used-history-badge">Materialen geweest: ${this.usedMaterials.size} / ${totalMaterials}</span>
+    let statsHtml = `
+      <span class="used-history-badge" title="Totale unieke oefeningen">Oefeningen geweest: ${this.usedExerciseIds.size} / ${totalExercises}</span>
+      <span class="used-history-badge" title="Totale unieke materialen">Materialen geweest: ${this.usedMaterials.size} / ${totalMaterials}</span>
+      <span class="used-history-badge" style="border-color:${this.circuitRotation ? 'var(--neon-cyan)' : 'var(--neon-yellow)'}; color:${this.circuitRotation ? 'var(--neon-cyan)' : 'var(--neon-yellow)'}; font-size:0.7rem;">
+        ${this.circuitRotation ? '🔄' : '⚡'} ${modeText}
+      </span>
     `;
 
+    // Multi-team tracker summary if T > 1
+    if (T > 1) {
+      statsHtml += `
+        <div class="used-history-teams-summary">
+          ${Array.from({ length: T }, (_, t) => {
+            const teamNum = t + 1;
+            const td = this.teamData[t] || { usedMaterials: new Set(), usedExerciseIds: new Set(), history: [] };
+            const matList = Array.from(td.usedMaterials);
+            const matsPreview = matList.length > 0 ? matList.slice(-4).join(', ') + (matList.length > 4 ? '...' : '') : 'Nog geen';
+            return `
+              <div class="team-summary-card team-border-${teamNum}">
+                <div class="team-summary-card-header">
+                  <span class="station-tab-team team-${teamNum}">TEAM ${teamNum}</span>
+                  <span class="team-summary-count">${td.history.length} oef. • ${td.usedMaterials.size} mat.</span>
+                </div>
+                <div class="team-summary-mats" title="${matList.join(', ')}">
+                  📦 ${matsPreview}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    this.elements.usedHistoryStats.innerHTML = statsHtml;
+
+    // Filter controls for history list if T > 1
+    const activeFilter = this._usedHistoryTeamFilter !== undefined ? this._usedHistoryTeamFilter : -1;
+    let filterHtml = '';
+    if (T > 1) {
+      filterHtml = `
+        <div class="used-history-filter-bar">
+          <button class="btn btn-tiny ${activeFilter === -1 ? 'btn-cyan' : 'btn-outline'}" onclick="window.workoutApp.filterUsedHistory(-1)">Alle Teams</button>
+          ${Array.from({ length: T }, (_, t) => `
+            <button class="btn btn-tiny ${activeFilter === t ? 'btn-pink' : 'btn-outline'}" onclick="window.workoutApp.filterUsedHistory(${t})">Team ${t + 1}</button>
+          `).join('')}
+        </div>
+      `;
+    }
+
+    // Filter list items
+    let filteredHistory = [...this.usedHistory];
+    if (T > 1 && activeFilter !== -1) {
+      filteredHistory = filteredHistory.filter(item => item.teamIndex === activeFilter);
+    }
+
     // Render History List
-    if (this.usedHistory.length === 0) {
+    if (filteredHistory.length === 0) {
       this.elements.usedHistoryList.innerHTML = `
+        ${filterHtml}
         <div class="used-history-empty">Nog geen oefeningen geweest in deze ronde (alles zit in de pool).</div>
       `;
     } else {
-      const itemsHtml = [...this.usedHistory].reverse().map((item, idx) => `
-        <div class="used-history-item">
-          <div class="used-history-item-left">
-            <span class="used-history-item-name">${item.name}</span>
-            <span class="used-history-item-material">${item.material}${item.timestamp ? ' • ' + item.timestamp : ''}</span>
+      const itemsHtml = filteredHistory.reverse().map((item) => {
+        const teamNum = (item.teamIndex !== undefined) ? (item.teamIndex + 1) : null;
+        const teamBadge = (T > 1 && teamNum)
+          ? `<span class="used-history-team-badge team-${teamNum}">TEAM ${teamNum}</span>`
+          : '';
+        return `
+          <div class="used-history-item ${teamNum ? 'team-item-' + teamNum : ''}">
+            <div class="used-history-item-left">
+              <div style="display:flex; align-items:center; gap:0.4rem;">
+                ${teamBadge}
+                <span class="used-history-item-name">${item.name}</span>
+              </div>
+              <span class="used-history-item-material">${item.material}${item.timestamp ? ' • ' + item.timestamp : ''}</span>
+            </div>
+            <span class="used-history-item-time">${item.time}s</span>
           </div>
-          <span class="used-history-item-time">${item.time}s</span>
-        </div>
-      `).join('');
-      this.elements.usedHistoryList.innerHTML = itemsHtml;
+        `;
+      }).join('');
+      this.elements.usedHistoryList.innerHTML = filterHtml + itemsHtml;
     }
   }
 
@@ -1684,6 +1915,128 @@ class WorkoutApp {
    */
 
   /**
+   * Helper: Creates a clean simulated team tracker for advance schedule generation
+   */
+  _createSimTracker() {
+    const simTracker = {
+      teamData: [],
+      globalMaterialCounts: {}
+    };
+    for (let t = 0; t < 8; t++) {
+      simTracker.teamData.push({
+        usedMaterials: new Set(),
+        materialCounts: {},
+        usedExerciseIds: new Set(),
+        exerciseCounts: {}
+      });
+    }
+    return simTracker;
+  }
+
+  /**
+   * Optimal Station Assignment Engine
+   * Assigns strictly unique materials and exercises to each team.
+   * Eliminates repeat bias across teams and ensures fair, balanced rotation.
+   */
+  _assignOptimalTeamStations(teamCount, trackerData, activeMaterials, activeExercisesMap) {
+    if (!activeMaterials || activeMaterials.length === 0) return [];
+    const T = Math.max(1, Math.min(8, teamCount));
+    const td = trackerData.teamData || trackerData;
+    const gc = trackerData.globalMaterialCounts || this.globalMaterialCounts || {};
+
+    let chosenMaterials = [];
+
+    if (activeMaterials.length < T) {
+      // Edge-case: fewer materials enabled than teams -> allow shared materials with minimal duplication
+      const roundCounts = {};
+      for (let t = 0; t < T; t++) {
+        const teamInfo = td[t] || { materialCounts: {} };
+        const sorted = [...activeMaterials].sort((a, b) => {
+          const costA = (teamInfo.materialCounts[a] || 0) * 10000 + (roundCounts[a] || 0) * 1000 + (gc[a] || 0) * 100 + Math.random() * 5;
+          const costB = (teamInfo.materialCounts[b] || 0) * 10000 + (roundCounts[b] || 0) * 1000 + (gc[b] || 0) * 100 + Math.random() * 5;
+          return costA - costB;
+        });
+        const picked = sorted[0];
+        roundCounts[picked] = (roundCounts[picked] || 0) + 1;
+        chosenMaterials.push(picked);
+      }
+    } else {
+      // Standard case: active materials >= teams -> find optimal distinct assignment
+      const teamOptions = [];
+      for (let t = 0; t < T; t++) {
+        const teamInfo = td[t] || { materialCounts: {}, usedExerciseIds: new Set() };
+        const opts = activeMaterials.map(m => {
+          const teamCnt = teamInfo.materialCounts[m] || 0;
+          const globCnt = gc[m] || 0;
+          const exs = activeExercisesMap[m] || [];
+          const hasUnused = exs.some(e => !teamInfo.usedExerciseIds || !teamInfo.usedExerciseIds.has(e.id));
+          return {
+            material: m,
+            cost: teamCnt * 10000 + globCnt * 100 + (hasUnused ? 0 : 500) + Math.random() * 5
+          };
+        });
+        opts.sort((a, b) => a.cost - b.cost);
+        teamOptions.push(opts);
+      }
+
+      let bestCost = Infinity;
+      let bestAssignment = null;
+      const assigned = new Set();
+      const current = [];
+
+      const backtrack = (teamIdx, currentCost) => {
+        if (currentCost >= bestCost) return;
+        if (teamIdx === T) {
+          bestCost = currentCost;
+          bestAssignment = [...current];
+          return;
+        }
+
+        const options = teamOptions[teamIdx];
+        for (let i = 0; i < options.length; i++) {
+          const opt = options[i];
+          if (assigned.has(opt.material)) continue;
+
+          assigned.add(opt.material);
+          current.push(opt.material);
+
+          backtrack(teamIdx + 1, currentCost + opt.cost);
+
+          current.pop();
+          assigned.delete(opt.material);
+        }
+      };
+
+      backtrack(0, 0);
+      chosenMaterials = bestAssignment || activeMaterials.slice(0, T);
+    }
+
+    // Now select a unique or least-used exercise for each team's chosen material
+    return chosenMaterials.map((mat, idx) => {
+      const teamInfo = td[idx] || { usedExerciseIds: new Set(), exerciseCounts: {} };
+      const exs = activeExercisesMap[mat] || [];
+
+      let eligible = exs.filter(e => !teamInfo.usedExerciseIds || !teamInfo.usedExerciseIds.has(e.id));
+      if (eligible.length === 0) {
+        let minCount = Infinity;
+        for (const e of exs) {
+          const cnt = (teamInfo.exerciseCounts && teamInfo.exerciseCounts[e.id]) || 0;
+          if (cnt < minCount) minCount = cnt;
+        }
+        eligible = exs.filter(e => ((teamInfo.exerciseCounts && teamInfo.exerciseCounts[e.id]) || 0) === minCount);
+      }
+      if (eligible.length === 0) eligible = exs;
+
+      const chosenEx = eligible[Math.floor(Math.random() * eligible.length)];
+      return {
+        stationIndex: idx,
+        material: mat,
+        exercise: chosenEx
+      };
+    });
+  }
+
+  /**
    * Helper: Selects strictly unique materials and matching exercises for multi-team circuit stations
    */
   _pickMultiTeamStations(teamCount) {
@@ -1704,31 +2057,12 @@ class WorkoutApp {
 
     if (activeMaterials.length === 0) return [];
 
-    const selectedMaterials = [];
-    const availablePool = activeMaterials.filter(m => !this.usedMaterials.has(m));
-
-    for (let i = 0; i < teamCount; i++) {
-      let candidateList = availablePool.filter(m => !selectedMaterials.includes(m));
-      if (candidateList.length === 0) {
-        candidateList = activeMaterials.filter(m => !selectedMaterials.includes(m));
-      }
-      if (candidateList.length === 0) {
-        candidateList = activeMaterials;
-      }
-      const pickedMat = candidateList[Math.floor(Math.random() * candidateList.length)];
-      selectedMaterials.push(pickedMat);
-    }
-
-    return selectedMaterials.map((mat, idx) => {
-      let exs = activeExercisesMap[mat].filter(e => !this.usedExerciseIds.has(e.id));
-      if (exs.length === 0) exs = activeExercisesMap[mat];
-      const ex = exs[Math.floor(Math.random() * exs.length)];
-      return {
-        stationIndex: idx,
-        material: mat,
-        exercise: ex
-      };
-    });
+    return this._assignOptimalTeamStations(
+      teamCount,
+      { teamData: this.teamData, globalMaterialCounts: this.globalMaterialCounts },
+      activeMaterials,
+      activeExercisesMap
+    );
   }
 
   /**
@@ -1791,45 +2125,41 @@ class WorkoutApp {
     const roundDurationSec = (avgWorkSec + this.countdownTime + 3) * multiplier;
     const countNeeded = Math.max(4, Math.ceil(totalSessionSeconds / roundDurationSec));
 
+    const simTracker = this._createSimTracker();
     const newSchedule = [];
-    const usedMatSet = new Set();
-    const usedExIdSet = new Set();
     let accumSeconds = 0;
 
     for (let i = 0; i < countNeeded; i++) {
       const chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
 
-      // Pick distinct materials for all stations in this round
-      const roundStations = [];
-      const roundMats = [];
+      const roundStations = this._assignOptimalTeamStations(
+        this.teamCount,
+        simTracker,
+        activeMaterials,
+        activeExercisesMap
+      );
 
-      for (let t = 0; t < this.teamCount; t++) {
-        let candidateMaterials = activeMaterials.filter(m => !roundMats.includes(m) && !usedMatSet.has(m) && activeExercisesMap[m].some(e => !usedExIdSet.has(e.id)));
-        if (candidateMaterials.length === 0) {
-          candidateMaterials = activeMaterials.filter(m => !roundMats.includes(m) && activeExercisesMap[m].some(e => !usedExIdSet.has(e.id)));
-          if (candidateMaterials.length === 0) {
-            candidateMaterials = activeMaterials.filter(m => !roundMats.includes(m));
-            if (candidateMaterials.length === 0) {
-              candidateMaterials = [...activeMaterials];
-            }
+      // Record simulated usage in simTracker
+      for (let t = 0; t < roundStations.length; t++) {
+        const st = roundStations[t];
+        if (this.circuitRotation) {
+          // With rotation, every team performs all stations in this round
+          for (let u = 0; u < this.teamCount; u++) {
+            const teamInfo = simTracker.teamData[u];
+            teamInfo.usedMaterials.add(st.material);
+            teamInfo.materialCounts[st.material] = (teamInfo.materialCounts[st.material] || 0) + 1;
+            teamInfo.usedExerciseIds.add(st.exercise.id);
+            teamInfo.exerciseCounts[st.exercise.id] = (teamInfo.exerciseCounts[st.exercise.id] || 0) + 1;
           }
+        } else {
+          // Without rotation: Team t performs station t exclusively!
+          const teamInfo = simTracker.teamData[t];
+          teamInfo.usedMaterials.add(st.material);
+          teamInfo.materialCounts[st.material] = (teamInfo.materialCounts[st.material] || 0) + 1;
+          teamInfo.usedExerciseIds.add(st.exercise.id);
+          teamInfo.exerciseCounts[st.exercise.id] = (teamInfo.exerciseCounts[st.exercise.id] || 0) + 1;
         }
-
-        const mat = candidateMaterials[Math.floor(Math.random() * candidateMaterials.length)];
-        roundMats.push(mat);
-
-        let candidateExs = activeExercisesMap[mat].filter(e => !usedExIdSet.has(e.id));
-        if (candidateExs.length === 0) candidateExs = activeExercisesMap[mat];
-        const ex = candidateExs[Math.floor(Math.random() * candidateExs.length)];
-
-        usedMatSet.add(mat);
-        usedExIdSet.add(ex.id);
-
-        roundStations.push({
-          stationIndex: t,
-          material: mat,
-          exercise: ex
-        });
+        simTracker.globalMaterialCounts[st.material] = (simTracker.globalMaterialCounts[st.material] || 0) + 1;
       }
 
       accumSeconds += ((this.countdownTime + chosenTime + 3) * multiplier);
@@ -1874,8 +2204,16 @@ class WorkoutApp {
     await Promise.all(validationPromises);
     this._isScheduleValidating = false;
 
-    this.plannedSchedule = newSchedule;
-    this.currentScheduleIndex = 0;
+    const isWorkoutActive = (this.currentState === 'countdown' || this.currentState === 'active' || (this.timer && this.timer.isRunning));
+
+    if (isWorkoutActive && this.plannedSchedule.length > 0 && this.currentScheduleIndex > 0) {
+      // Keep past and current active rounds intact; replace only future rounds
+      const preservedPastRounds = this.plannedSchedule.slice(0, this.currentScheduleIndex);
+      this.plannedSchedule = [...preservedPastRounds, ...newSchedule];
+    } else {
+      this.plannedSchedule = newSchedule;
+      this.currentScheduleIndex = 0;
+    }
     this.renderSecretSchedule();
   }
 
@@ -2355,6 +2693,16 @@ class WorkoutApp {
       }
     }
 
+    // If a team count or reels pool change was queued while a workout was active, apply it now before spinning
+    if (this._pendingTeamCount && this._pendingTeamCount !== this.teamCount) {
+      this.setTeamCount(this._pendingTeamCount);
+      this._pendingTeamCount = null;
+      this._pendingReelsUpdate = false;
+    } else if (this._pendingReelsUpdate) {
+      this.updateReelsPool();
+      this._pendingReelsUpdate = false;
+    }
+
     // Ensure planned schedule exists
     if (this.plannedSchedule.length === 0) {
       await this.generatePlannedSchedule(true);
@@ -2440,14 +2788,9 @@ class WorkoutApp {
     this.activeMaterial = chosenMaterial;
     this.activeExercise = chosenExercise;
 
-    // Track non-repeat cycle sets and validate videos
-    for (const st of chosenStations) {
-      if (this.noRepeatMaterials) {
-        this.usedMaterials.add(st.material);
-      }
-      if (this.noRepeatExercises) {
-        this.usedExerciseIds.add(st.exercise.id);
-      }
+    // Track non-repeat cycle sets, per-team usage, and validate videos
+    for (let t = 0; t < chosenStations.length; t++) {
+      const st = chosenStations[t];
 
       const videoId = this._extractYouTubeId(st.exercise.video_search_url);
       if (videoId) {
@@ -2460,22 +2803,52 @@ class WorkoutApp {
         });
       }
 
-      // Record used history
-      this.usedHistory.push({
-        id: st.exercise.id,
-        name: st.exercise.exercise_name,
-        material: st.material,
-        time: chosenTime,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      });
+      if (this.circuitRotation) {
+        // With circuit rotation: all teams will rotate through all stations in this round
+        for (let u = 0; u < this.teamCount; u++) {
+          if (!this.teamData[u]) this._initTeamData(true);
+          const td = this.teamData[u];
+          td.usedMaterials.add(st.material);
+          td.materialCounts[st.material] = (td.materialCounts[st.material] || 0) + 1;
+          td.usedExerciseIds.add(st.exercise.id);
+          td.exerciseCounts[st.exercise.id] = (td.exerciseCounts[st.exercise.id] || 0) + 1;
+          td.history.push({
+            round: this._sessionExerciseCount,
+            teamIndex: u,
+            teamNum: u + 1,
+            stationNum: t + 1,
+            material: st.material,
+            exerciseName: st.exercise.exercise_name,
+            exerciseId: st.exercise.id,
+            time: chosenTime,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          });
+        }
+
+        this.globalMaterialCounts[st.material] = (this.globalMaterialCounts[st.material] || 0) + 1;
+        if (this.noRepeatMaterials) this.usedMaterials.add(st.material);
+        if (this.noRepeatExercises) this.usedExerciseIds.add(st.exercise.id);
+
+        this.usedHistory.push({
+          id: st.exercise.id,
+          name: st.exercise.exercise_name,
+          material: st.material,
+          stationNum: t + 1,
+          time: chosenTime,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        });
+      } else {
+        // Without circuit rotation (doordraaien UIT): Team t performs station t exclusively!
+        this._recordTeamUsage(t, st.material, st.exercise, chosenTime, t + 1);
+      }
     }
 
     this._saveUsedHistory();
     this.renderSecretSchedule();
+    this.renderUsedHistory();
 
-    // Update UI status
+    // Update UI status (keep admin button always accessible)
     this.elements.spinBtn.disabled = true;
-    this.elements.adminOpenBtn.disabled = true;
 
     // Run animation
     this.slotMachine.spin(
@@ -3118,6 +3491,25 @@ class WorkoutApp {
     if (this.elements.classStatTime) this.elements.classStatTime.textContent = timeFormatted;
     if (this.elements.classStatMaterials) this.elements.classStatMaterials.textContent = uniqueMaterials;
 
+    if (this.elements.classFinishedTeamsSummary) {
+      if (this.teamCount > 1) {
+        this.elements.classFinishedTeamsSummary.style.display = 'grid';
+        this.elements.classFinishedTeamsSummary.innerHTML = Array.from({ length: this.teamCount }, (_, t) => {
+          const teamNum = t + 1;
+          const td = this.teamData[t] || { history: [], usedMaterials: new Set() };
+          return `
+            <div class="finished-team-box team-border-${teamNum}">
+              <div class="finished-team-name team-${teamNum}">TEAM ${teamNum}</div>
+              <div class="finished-team-stats">${td.history.length} oefeningen • ${td.usedMaterials.size} unieke materialen</div>
+            </div>
+          `;
+        }).join('');
+      } else {
+        this.elements.classFinishedTeamsSummary.style.display = 'none';
+        this.elements.classFinishedTeamsSummary.innerHTML = '';
+      }
+    }
+
     modal.classList.add('show');
     this.startConfetti();
     this.logWorkoutCompletedToGoogleSheet();
@@ -3236,7 +3628,14 @@ class WorkoutApp {
       this.elements.searchBar.value = '';
       this.filterAdminTree('');
       
-      // Sync inputs to saved state
+      // Sync inputs to saved / pending state
+      if (this.elements.minTimeInput) this.elements.minTimeInput.value = this.minTime;
+      if (this.elements.maxTimeInput) this.elements.maxTimeInput.value = this.maxTime;
+      if (this.elements.countdownTimeInput) this.elements.countdownTimeInput.value = this.countdownTime;
+      if (this.elements.volumeInput) this.elements.volumeInput.value = Math.round(this.volume * 100);
+      if (this.elements.teamCountInput) this.elements.teamCountInput.value = String(this._pendingTeamCount || this.teamCount);
+      if (this.elements.circuitRotationInput) this.elements.circuitRotationInput.checked = this.circuitRotation;
+
       if (this.elements.coachSelect) {
         this.elements.coachSelect.value = this.coach;
       }
@@ -3264,7 +3663,27 @@ class WorkoutApp {
     }
   }
 
+  /**
+   * Displays an unobtrusive toast notification
+   */
+  showToast(message, duration = 3200) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'app-toast';
+      toast.className = 'app-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.add('show');
+    if (this._toastTimer) clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      toast.classList.remove('show');
+    }, duration);
+  }
+
   switchView(state) {
+    this.currentState = state;
     const main = this.elements.appMain;
     if (!main) return;
     main.classList.remove('state-idle', 'state-countdown', 'state-active');

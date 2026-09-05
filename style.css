@@ -1706,6 +1706,120 @@ header {
   font-style: italic;
 }
 
+/* Multi-Team History & Tracking Overview */
+.used-history-teams-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.45rem;
+  margin-top: 0.4rem;
+  width: 100%;
+}
+
+.team-summary-card {
+  background: rgba(18, 18, 28, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 0.4rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.team-summary-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.team-summary-count {
+  font-size: 0.72rem;
+  color: #bbbbdd;
+  font-family: var(--font-digital);
+}
+
+.team-summary-mats {
+  font-size: 0.68rem;
+  color: #8888aa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* History Filter Bar */
+.used-history-filter-bar {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  padding: 0.2rem 0 0.4rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 0.2rem;
+}
+
+.btn-outline {
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  color: #bbb !important;
+}
+
+.btn-outline:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #fff !important;
+}
+
+/* Per-Team Badge in History Item */
+.used-history-team-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.used-history-item.team-item-1 { border-left-color: var(--team-1-color); }
+.used-history-item.team-item-2 { border-left-color: var(--team-2-color); }
+.used-history-item.team-item-3 { border-left-color: var(--team-3-color); }
+.used-history-item.team-item-4 { border-left-color: var(--team-4-color); }
+.used-history-item.team-item-5 { border-left-color: var(--team-5-color); }
+.used-history-item.team-item-6 { border-left-color: var(--team-6-color); }
+.used-history-item.team-item-7 { border-left-color: var(--team-7-color); }
+.used-history-item.team-item-8 { border-left-color: var(--team-8-color); }
+
+/* Celebration Modal Multi-Team Breakdown */
+.class-finished-teams-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0.6rem 0 0.8rem 0;
+}
+
+.finished-team-box {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top-width: 3px;
+  border-radius: 6px;
+  padding: 0.4rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.finished-team-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.finished-team-stats {
+  font-size: 0.68rem;
+  color: #8888aa;
+  font-family: var(--font-digital);
+}
+
+
 /* Database Selector lists */
 .selector-list-header {
   display: flex;
@@ -1883,12 +1997,13 @@ header {
   100% { text-shadow: 0 0 15px rgba(0, 255, 255, 0.7), 0 0 30px rgba(0, 255, 255, 0.3); }
 }
 
-/* Background blur behind admin overlay */
+/* Background blur behind admin overlay (semi-transparent so workout remains visible) */
 .scrim {
   position: fixed;
   top: 0; left: 0; width: 100vw; height: 100vh;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
   z-index: 90;
   opacity: 0;
   pointer-events: none;
@@ -1898,6 +2013,33 @@ header {
 .scrim.open {
   opacity: 1;
   pointer-events: all;
+}
+
+/* Toast notification popup */
+.app-toast {
+  position: fixed;
+  bottom: 2.2rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(25px);
+  background: rgba(15, 15, 25, 0.95);
+  border: 1px solid var(--neon-cyan);
+  box-shadow: 0 0 25px rgba(0, 255, 255, 0.4), inset 0 0 10px rgba(0, 255, 255, 0.1);
+  color: #fff;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  z-index: 1000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: center;
+  max-width: 90vw;
+}
+
+.app-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 /* ==========================================================================
