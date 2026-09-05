@@ -71,34 +71,34 @@ class SlotReel {
       return;
     }
 
-    const repetitions = Math.max(3, Math.ceil(20 / items.length));
-    const renderList = [];
+    const repetitions = Math.max(2, Math.ceil(20 / items.length));
+    const fragment = document.createDocumentFragment();
     for (let r = 0; r < repetitions; r++) {
-      renderList.push(...items);
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
+        const card = document.createElement('div');
+        card.className = 'reel-card';
+        card.dataset.index = idx;
+        
+        if (this.itemType === 'material') {
+          card.innerHTML = `<div class="card-title">${item}</div>`;
+        } else if (this.itemType === 'exercise') {
+          card.innerHTML = `
+            <div class="card-title exercise-title">${item.exercise_name}</div>
+            <div class="card-subtitle">${item.category || ''}</div>
+          `;
+        } else if (this.itemType === 'time') {
+          card.innerHTML = `
+            <div class="card-time">${item}</div>
+            <div class="card-unit">SEC</div>
+          `;
+        }
+        
+        fragment.appendChild(card);
+      }
     }
 
-    renderList.forEach((item, idx) => {
-      const card = document.createElement('div');
-      card.className = 'reel-card';
-      card.dataset.index = idx % items.length;
-      
-      if (this.itemType === 'material') {
-        card.innerHTML = `<div class="card-title">${item}</div>`;
-      } else if (this.itemType === 'exercise') {
-        card.innerHTML = `
-          <div class="card-title exercise-title">${item.exercise_name}</div>
-          <div class="card-subtitle">${item.category || ''}</div>
-        `;
-      } else if (this.itemType === 'time') {
-        card.innerHTML = `
-          <div class="card-time">${item}</div>
-          <div class="card-unit">SEC</div>
-        `;
-      }
-      
-      this.strip.appendChild(card);
-    });
-
+    this.strip.appendChild(fragment);
     this.updateItemHeight();
     this.resetPosition();
   }
@@ -169,8 +169,12 @@ class SlotReel {
     const minDecelDistance = 1.2 * loopHeight;
     
     let targetOffset = rawTargetOffset;
-    while (targetOffset > this.offset - minDecelDistance) {
-      targetOffset -= loopHeight;
+    if (loopHeight > 0) {
+      let safety = 0;
+      while (targetOffset > this.offset - minDecelDistance && safety < 100) {
+        targetOffset -= loopHeight;
+        safety++;
+      }
     }
 
     this.decelEndOffset = targetOffset;

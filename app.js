@@ -377,32 +377,7 @@ class WorkoutApp {
     this.elements.spinBtn.addEventListener('click', () => this.handleSpin());
 
     // Teams Selectors
-    if (this.elements.quickTeamSelect) {
-      this.elements.quickTeamSelect.addEventListener('change', (e) => {
-        const newCount = parseInt(e.target.value);
-        const isWorkoutActive = (this.currentState === 'countdown' || this.currentState === 'active');
-        if (isWorkoutActive) {
-          this._pendingTeamCount = newCount;
-          this._setCookie('workout_team_count', newCount);
-          this.showToast(`✓ Teams aangepast naar ${newCount}! Actief vanaf de volgende ronde.`);
-        } else {
-          this.setTeamCount(newCount);
-        }
-      });
-    }
-    if (this.elements.teamCountInput) {
-      this.elements.teamCountInput.addEventListener('change', (e) => {
-        const newCount = parseInt(e.target.value);
-        const isWorkoutActive = (this.currentState === 'countdown' || this.currentState === 'active');
-        if (isWorkoutActive) {
-          this._pendingTeamCount = newCount;
-          this._setCookie('workout_team_count', newCount);
-          this.showToast(`✓ Teams aangepast naar ${newCount}! Actief vanaf de volgende ronde.`);
-        } else {
-          this.setTeamCount(newCount);
-        }
-      });
-    }
+    // Team count and circuit rotation are configured and saved via the Settings panel (OPSLAAN & SLUITEN)
     if (this.elements.circuitRotationInput) {
       this.elements.circuitRotationInput.addEventListener('change', (e) => {
         this.circuitRotation = e.target.checked;
@@ -1087,9 +1062,10 @@ class WorkoutApp {
       // Idle: apply team count and reels immediately
       if (teamCount !== this.teamCount) {
         this.setTeamCount(teamCount);
+      } else {
+        this.updateReelsPool();
+        this.generatePlannedSchedule(true);
       }
-      this.updateReelsPool();
-      this.generatePlannedSchedule(true);
       if (this.elements.timerDigits) {
         this.elements.timerDigits.textContent = this.countdownTime;
       }
@@ -2103,7 +2079,16 @@ class WorkoutApp {
       }
       if (eligible.length === 0) eligible = exs;
 
-      const chosenEx = eligible[Math.floor(Math.random() * eligible.length)];
+      let chosenEx = (eligible && eligible.length > 0) ? eligible[Math.floor(Math.random() * eligible.length)] : null;
+      if (!chosenEx) {
+        for (const m in activeExercisesMap) {
+          if (activeExercisesMap[m] && activeExercisesMap[m].length > 0) {
+            chosenEx = activeExercisesMap[m][0];
+            mat = m;
+            break;
+          }
+        }
+      }
       return {
         stationIndex: idx,
         material: mat,
@@ -2146,12 +2131,17 @@ class WorkoutApp {
    */
   async generatePlannedSchedule(forceNew = false) {
     if (!forceNew && this.plannedSchedule.length > 0) return;
-
+    if (this._isScheduleGenerating) {
+      this._pendingScheduleRegen = true;
+      return;
+    }
+    this._isScheduleGenerating = true;
     this._isScheduleValidating = true;
 
-    const activeMaterials = [];
-    const activeExercisesMap = {};
-    const allEnabled = [];
+    try {
+      const activeMaterials = [];
+      const activeExercisesMap = {};
+      const allEnabled = [];
 
     for (const mat in this.database) {
       const exs = this.database[mat].filter(ex => {
@@ -2377,6 +2367,16 @@ class WorkoutApp {
     }
     this._recalculateScheduleTimings();
     this.renderSecretSchedule();
+    } catch (err) {
+      console.error("Error generating planned schedule:", err);
+    } finally {
+      this._isScheduleGenerating = false;
+      this._isScheduleValidating = false;
+      if (this._pendingScheduleRegen) {
+        this._pendingScheduleRegen = false;
+        setTimeout(() => this.generatePlannedSchedule(true), 100);
+      }
+    }
   }
 
   /**
