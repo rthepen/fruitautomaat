@@ -27,20 +27,6 @@
       </div>
       
       <div class="header-controls">
-        <!-- Quick Teams Selector -->
-        <div class="quick-team-wrapper" title="Kies aantal teams voor circuit training">
-          <span class="quick-team-label">👥 TEAMS:</span>
-          <select id="quick-team-select" class="quick-team-select" aria-label="Aantal teams">
-            <option value="1">1 Team</option>
-            <option value="2">2 Teams</option>
-            <option value="3">3 Teams</option>
-            <option value="4">4 Teams</option>
-            <option value="5">5 Teams</option>
-            <option value="6">6 Teams</option>
-            <option value="7">7 Teams</option>
-            <option value="8">8 Teams</option>
-          </select>
-        </div>
         <!-- Sound FX toggle button -->
         <button id="audio-toggle-btn" class="btn btn-cyan btn-icon" aria-label="Toggle geluidseffecten" title="Geluidseffecten aan/uit">
           <span class="btn-icon-symbol">🔊</span>
@@ -145,6 +131,7 @@
       <div class="horizontal-timer-bar" id="unified-timer-panel">
         <div class="timer-bar-status">
           <span class="circuit-rotation-badge" id="circuit-rotation-badge" style="display:none;">WISSEL 1 / 3</span>
+          <span class="workout-endtime-badge" id="workout-endtime-badge" style="display:none;">🏁 KLAAR OM --:--</span>
           <span class="unified-timer-label" id="unified-timer-label">MAAK JE KLAAR</span>
         </div>
 
@@ -417,6 +404,9 @@
         <div class="secret-planner-toolbar">
           <button id="secret-regenerate-btn" class="btn btn-cyan btn-small">
             🎲 Nieuw Schema Genereren
+          </button>
+          <button id="secret-optimize-times-btn" class="btn btn-cyan btn-small" title="Herbereken werktijden zodat training max 3 min voor lestijd klaar is">
+            ⏱️ Tijden Optimaliseren
           </button>
           <button id="secret-add-exercise-btn" class="btn btn-pink btn-small">
             ➕ Oefening Toevoegen

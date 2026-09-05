@@ -292,6 +292,7 @@ class WorkoutApp {
       secretPlannerStats: document.getElementById('secret-planner-stats'),
       secretScheduleList: document.getElementById('secret-schedule-list'),
       secretRegenerateBtn: document.getElementById('secret-regenerate-btn'),
+      secretOptimizeTimesBtn: document.getElementById('secret-optimize-times-btn'),
       secretAddExerciseBtn: document.getElementById('secret-add-exercise-btn'),
 
       // Developer Tools inside Secret Menu
@@ -351,6 +352,7 @@ class WorkoutApp {
       teamCountInput: document.getElementById('team-count-input'),
       circuitRotationInput: document.getElementById('circuit-rotation-input'),
       circuitRotationBadge: document.getElementById('circuit-rotation-badge'),
+      workoutEndTimeBadge: document.getElementById('workout-endtime-badge'),
       stationsTrackerBar: document.getElementById('stations-tracker-bar'),
       stationsOverviewPanel: document.getElementById('stations-overview-panel'),
       finishedOverlayTitle: document.getElementById('finished-overlay-title'),
@@ -395,6 +397,9 @@ class WorkoutApp {
         if (isWorkoutActive) {
           this._pendingTeamCount = newCount;
           this._setCookie('workout_team_count', newCount);
+          this.showToast(`✓ Teams aangepast naar ${newCount}! Actief vanaf de volgende ronde.`);
+        } else {
+          this.setTeamCount(newCount);
         }
       });
     }
@@ -523,6 +528,9 @@ class WorkoutApp {
     }
     if (this.elements.secretRegenerateBtn) {
       this.elements.secretRegenerateBtn.addEventListener('click', () => this.generatePlannedSchedule(true));
+    }
+    if (this.elements.secretOptimizeTimesBtn) {
+      this.elements.secretOptimizeTimesBtn.addEventListener('click', () => this.optimizeScheduleTimes());
     }
     if (this.elements.secretAddExerciseBtn) {
       this.elements.secretAddExerciseBtn.addEventListener('click', () => this.addExerciseToSchedule());
@@ -1736,10 +1744,28 @@ class WorkoutApp {
   }
 
   /**
+   * Calculates the exact total seconds required for a complete workout round.
+   * If circuitRotation is active, accounts for all teams completing all station rotations.
+   */
+  _getRoundDurationSeconds(workTime, teamCount = this.teamCount, circuitRotation = this.circuitRotation) {
+    const T = circuitRotation ? Math.max(1, teamCount) : 1;
+    const work = Number(workTime) || 30;
+    const countdown = Number(this.countdownTime) || 5;
+    // 8s overhead (spin animation, celebration pauses, next round prep)
+    // (T - 1) * 4.5s switch overlay duration between stations during circuit rotation
+    return 8 + (T * (work + countdown)) + ((T - 1) * 4.5);
+  }
+
+  /**
    * Check if class end time has passed or if there is not enough time remaining
-   * for another full exercise cycle (countdown + max working time).
+   * for all teams to complete a full exercise round.
    */
   _isClassFinished() {
+    // If all planned rounds in the schedule have completed, session is finished
+    if (this.plannedSchedule && this.plannedSchedule.length > 0 && this.currentScheduleIndex >= this.plannedSchedule.length) {
+      return true;
+    }
+
     if (!this.classEndTime) return false;
     // Prevent false trigger on fresh page reload before session is active
     if (!this._isSessionActive && this.usedHistory.length === 0) {
@@ -1751,8 +1777,8 @@ class WorkoutApp {
     end.setHours(h, m, 0, 0);
     const remainingSec = (end - now) / 1000;
     
-    // Required seconds for a full next exercise cycle: countdown + max working time
-    const requiredSec = this.countdownTime + this.maxTime;
+    // Required seconds for a full next exercise cycle (all teams complete stations)
+    const requiredSec = this._getRoundDurationSeconds(this.minTime, this.teamCount, this.circuitRotation);
     return remainingSec < requiredSec;
   }
 
@@ -1773,16 +1799,35 @@ class WorkoutApp {
     }
     this._setCookie('workout_class_start', this.classStartTime);
     
-    // If duration dropdown has a chosen value, recompute end time
+    // Check if end time needs to be recalculated
     const mins = parseInt(this.elements.classDurationSelect?.value);
-    if (mins && mins > 0) {
-      this.calculateEndTimeFromDuration(mins);
+    let shouldRecalcEnd = (mins && mins > 0);
+
+    if (!shouldRecalcEnd) {
+      if (!this.classEndTime) {
+        shouldRecalcEnd = true;
+      } else {
+        const [eH, eM] = this.classEndTime.split(':').map(Number);
+        const endMin = eH * 60 + eM;
+        const startMin = target.getHours() * 60 + target.getMinutes();
+        // If end time is before or within 5 min of the new start time, recompute to 45 min
+        if (endMin <= startMin || (endMin - startMin) < 5) {
+          shouldRecalcEnd = true;
+        }
+      }
     }
-    
+
     this._isSessionActive = false;
     this._exactStartTimestamp = target.getTime();
-    this.generatePlannedSchedule(true);
-    this.startClassClock();
+
+    if (shouldRecalcEnd) {
+      const chosenMins = (mins && mins > 0) ? mins : 45;
+      this.calculateEndTimeFromDuration(chosenMins);
+    } else {
+      this.generatePlannedSchedule(true);
+      this.startClassClock();
+    }
+
     this.openAdmin(false);
   }
 
@@ -1961,12 +2006,12 @@ class WorkoutApp {
         chosenMaterials.push(picked);
       }
     } else {
-      // Standard case: active materials >= teams -> find optimal distinct assignment
+      // Standard case: active materials >= teams -> find optimal distinct assignment without exponential freeze
       const teamOptions = [];
       for (let t = 0; t < T; t++) {
         const teamInfo = td[t] || { materialCounts: {}, usedExerciseIds: new Set() };
         const opts = activeMaterials.map(m => {
-          const teamCnt = teamInfo.materialCounts[m] || 0;
+          const teamCnt = (teamInfo.materialCounts && teamInfo.materialCounts[m]) || 0;
           const globCnt = gc[m] || 0;
           const exs = activeExercisesMap[m] || [];
           const hasUnused = exs.some(e => !teamInfo.usedExerciseIds || !teamInfo.usedExerciseIds.has(e.id));
@@ -1979,36 +2024,67 @@ class WorkoutApp {
         teamOptions.push(opts);
       }
 
-      let bestCost = Infinity;
-      let bestAssignment = null;
-      const assigned = new Set();
-      const current = [];
+      // Priority-based greedy assignment: teams with steepest cost difference between 1st & 2nd choice choose first
+      const chosen = new Array(T).fill(null);
+      const assignedMaterials = new Set();
 
-      const backtrack = (teamIdx, currentCost) => {
-        if (currentCost >= bestCost) return;
-        if (teamIdx === T) {
-          bestCost = currentCost;
-          bestAssignment = [...current];
-          return;
+      const teamOrder = [];
+      for (let t = 0; t < T; t++) {
+        const opts = teamOptions[t];
+        const diff = (opts.length > 1) ? (opts[1].cost - opts[0].cost) : 1000;
+        teamOrder.push({ t, bestCost: opts[0].cost, diff });
+      }
+      teamOrder.sort((a, b) => b.diff - a.diff || b.bestCost - a.bestCost);
+
+      for (const { t } of teamOrder) {
+        const opts = teamOptions[t];
+        for (const opt of opts) {
+          if (!assignedMaterials.has(opt.material)) {
+            chosen[t] = opt.material;
+            assignedMaterials.add(opt.material);
+            break;
+          }
         }
+      }
 
-        const options = teamOptions[teamIdx];
-        for (let i = 0; i < options.length; i++) {
-          const opt = options[i];
-          if (assigned.has(opt.material)) continue;
-
-          assigned.add(opt.material);
-          current.push(opt.material);
-
-          backtrack(teamIdx + 1, currentCost + opt.cost);
-
-          current.pop();
-          assigned.delete(opt.material);
+      // Fallback in case any slot wasn't filled
+      for (let t = 0; t < T; t++) {
+        if (!chosen[t]) {
+          const unassigned = activeMaterials.find(m => !assignedMaterials.has(m));
+          if (unassigned) {
+            chosen[t] = unassigned;
+            assignedMaterials.add(unassigned);
+          } else {
+            chosen[t] = activeMaterials[t % activeMaterials.length];
+          }
         }
-      };
+      }
 
-      backtrack(0, 0);
-      chosenMaterials = bestAssignment || activeMaterials.slice(0, T);
+      // Local 2-opt swap pass to minimize overall assignment cost
+      let improved = true;
+      let pass = 0;
+      while (improved && pass < 5) {
+        improved = false;
+        pass++;
+        for (let i = 0; i < T; i++) {
+          for (let j = i + 1; j < T; j++) {
+            const matI = chosen[i];
+            const matJ = chosen[j];
+            if (!matI || !matJ) continue;
+            const costCurrent = (teamOptions[i].find(o => o.material === matI)?.cost || 0) +
+                                (teamOptions[j].find(o => o.material === matJ)?.cost || 0);
+            const costSwapped = (teamOptions[i].find(o => o.material === matJ)?.cost || 0) +
+                                (teamOptions[j].find(o => o.material === matI)?.cost || 0);
+            if (costSwapped < costCurrent - 1e-4) {
+              chosen[i] = matJ;
+              chosen[j] = matI;
+              improved = true;
+            }
+          }
+        }
+      }
+
+      chosenMaterials = chosen;
     }
 
     // Now select a unique or least-used exercise for each team's chosen material
@@ -2099,38 +2175,127 @@ class WorkoutApp {
 
     // Determine target duration in seconds
     let totalSessionSeconds = 2700; // 45 min default
+    const now = new Date();
+
     if (this.classStartTime && this.classEndTime) {
       const [sH, sM] = this.classStartTime.split(':').map(Number);
       const [eH, eM] = this.classEndTime.split(':').map(Number);
       const startMin = sH * 60 + sM;
       let endMin = eH * 60 + eM;
       if (endMin < startMin) endMin += 24 * 60;
-      totalSessionSeconds = Math.max(300, (endMin - startMin) * 60);
+      
+      const isWorkoutActive = (this.currentState === 'countdown' || this.currentState === 'active' || (this.timer && this.timer.isRunning));
+      if (isWorkoutActive || this.usedHistory.length > 0) {
+        const nowMin = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() / 60);
+        totalSessionSeconds = Math.max(180, (endMin - nowMin) * 60);
+      } else {
+        totalSessionSeconds = Math.max(300, (endMin - startMin) * 60);
+      }
     } else if (this.classEndTime) {
-      const now = new Date();
       const [eH, eM] = this.classEndTime.split(':').map(Number);
       const endMin = eH * 60 + eM;
-      const nowMin = now.getHours() * 60 + now.getMinutes();
+      const nowMin = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() / 60);
       let diff = (endMin - nowMin) * 60;
-      if (diff > 300) totalSessionSeconds = diff;
+      if (diff > 180) totalSessionSeconds = diff;
     }
 
-    const minStep = Math.ceil(this.minTime / 10) * 10;
-    const maxStep = Math.floor(this.maxTime / 10) * 10;
-    const timeChoices = [];
-    for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
+    const minW = Math.max(10, Math.ceil(this.minTime / 5) * 5);
+    const maxW = Math.max(minW, Math.floor(this.maxTime / 5) * 5);
+    const midW = Math.round(((minW + maxW) / 2) / 5) * 5;
+    const T = this.circuitRotation ? Math.max(1, this.teamCount) : 1;
 
-    const avgWorkSec = (minStep + maxStep) / 2;
-    const multiplier = this.circuitRotation ? this.teamCount : 1;
-    const roundDurationSec = (avgWorkSec + this.countdownTime + 3) * multiplier;
-    const countNeeded = Math.max(4, Math.ceil(totalSessionSeconds / roundDurationSec));
+    // Single round duration function
+    const roundOverhead = 8 + ((T - 1) * 4.5) + (T * this.countdownTime);
+    const getRoundDur = (w) => roundOverhead + (T * w);
+
+    // Find best round count K so that the full training finishes between 0 and 3 minutes before end time
+    const avgRoundDur = getRoundDur(midW);
+    let K = Math.max(2, Math.round(totalSessionSeconds / avgRoundDur));
+
+    let bestK = K;
+    let minMidDiff = Infinity;
+    let foundOverlap = false;
+
+    for (let candK = Math.max(1, K - 5); candK <= K + 5; candK++) {
+      const minTot = candK * getRoundDur(minW);
+      const maxTot = candK * getRoundDur(maxW);
+
+      if (minTot <= totalSessionSeconds && maxTot >= (totalSessionSeconds - 180)) {
+        foundOverlap = true;
+        const reqW = ((totalSessionSeconds - 60) - (candK * roundOverhead)) / (candK * T);
+        const diff = Math.abs(reqW - midW);
+        if (diff < minMidDiff) {
+          minMidDiff = diff;
+          bestK = candK;
+        }
+      }
+    }
+
+    if (!foundOverlap) {
+      bestK = Math.max(1, Math.floor(totalSessionSeconds / avgRoundDur));
+    }
+    K = bestK;
+
+    // Non-random calibrated work times: target finishing ~60s before class end time (comfortably within 0-180s margin)
+    const targetDurationSec = Math.max(K * getRoundDur(minW), totalSessionSeconds - 60);
+    const targetTotalWork = Math.max(
+      K * minW,
+      Math.min(K * maxW, Math.round(((targetDurationSec - (K * roundOverhead)) / T) / 5) * 5)
+    );
+
+    const baseW = Math.max(minW, Math.min(maxW, Math.floor(targetTotalWork / (K * 5)) * 5));
+    const assignedTimes = new Array(K).fill(baseW);
+
+    let remSteps = Math.round((targetTotalWork - (K * baseW)) / 5);
+    let idx = Math.floor(K / 2);
+    let step = 1;
+    while (remSteps > 0) {
+      if (idx >= 0 && idx < K && assignedTimes[idx] + 5 <= maxW) {
+        assignedTimes[idx] += 5;
+        remSteps--;
+      }
+      idx += step;
+      step = step > 0 ? -(step + 1) : -step + 1;
+      if (Math.abs(step) > K) break;
+    }
+
+    // Fine-tune verification
+    let totalD = assignedTimes.reduce((acc, w) => acc + getRoundDur(w), 0);
+    let fineTuneSafety = 0;
+    while (totalD > totalSessionSeconds && fineTuneSafety < 50) {
+      fineTuneSafety++;
+      let reduced = false;
+      for (let i = K - 1; i >= 0; i--) {
+        if (assignedTimes[i] - 5 >= minW) {
+          assignedTimes[i] -= 5;
+          totalD -= (T * 5);
+          reduced = true;
+          if (totalD <= totalSessionSeconds) break;
+        }
+      }
+      if (!reduced) break;
+    }
+
+    fineTuneSafety = 0;
+    while (totalD < totalSessionSeconds - 180 && fineTuneSafety < 50) {
+      fineTuneSafety++;
+      let increased = false;
+      for (let i = 0; i < K; i++) {
+        if (assignedTimes[i] + 5 <= maxW && (totalD + T * 5) <= totalSessionSeconds) {
+          assignedTimes[i] += 5;
+          totalD += (T * 5);
+          increased = true;
+          if (totalD >= totalSessionSeconds - 180) break;
+        }
+      }
+      if (!increased) break;
+    }
 
     const simTracker = this._createSimTracker();
     const newSchedule = [];
-    let accumSeconds = 0;
 
-    for (let i = 0; i < countNeeded; i++) {
-      const chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
+    for (let i = 0; i < K; i++) {
+      const chosenTime = assignedTimes[i] || midW;
 
       const roundStations = this._assignOptimalTeamStations(
         this.teamCount,
@@ -2162,8 +2327,6 @@ class WorkoutApp {
         simTracker.globalMaterialCounts[st.material] = (simTracker.globalMaterialCounts[st.material] || 0) + 1;
       }
 
-      accumSeconds += ((this.countdownTime + chosenTime + 3) * multiplier);
-
       newSchedule.push({
         id: roundStations[0].exercise.id,
         exercise: roundStations[0].exercise,
@@ -2173,8 +2336,6 @@ class WorkoutApp {
         status: 'pending',
         videoValid: true
       });
-
-      if (accumSeconds >= totalSessionSeconds) break;
     }
 
     // Fast parallel background video validation across all scheduled items
@@ -2214,7 +2375,166 @@ class WorkoutApp {
       this.plannedSchedule = newSchedule;
       this.currentScheduleIndex = 0;
     }
+    this._recalculateScheduleTimings();
     this.renderSecretSchedule();
+  }
+
+  /**
+   * Recalculates planned start and finish timestamps for every item in the schedule
+   */
+  _recalculateScheduleTimings() {
+    if (!this.plannedSchedule || this.plannedSchedule.length === 0) return;
+
+    const now = new Date();
+    let currentMs = now.getTime();
+
+    // If session has not started yet and classStartTime is in the future, project from classStartTime
+    if (!this._isSessionActive && this.usedHistory.length === 0 && this.classStartTime) {
+      const [sH, sM] = this.classStartTime.split(':').map(Number);
+      const startDate = new Date(now);
+      startDate.setHours(sH, sM, 0, 0);
+      if (startDate.getTime() > now.getTime()) {
+        currentMs = startDate.getTime();
+      }
+    }
+
+    const formatHHMM = (ms) => {
+      const d = new Date(ms);
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    };
+
+    let accumMs = currentMs;
+
+    this.plannedSchedule.forEach((item, index) => {
+      const durationSec = this._getRoundDurationSeconds(item.time, item.stations ? item.stations.length : this.teamCount, this.circuitRotation);
+      item.durationSec = durationSec;
+
+      if (index < this.currentScheduleIndex) {
+        // Past round: preserve previously recorded or estimated finish time
+        if (!item.formattedEndTime) {
+          item.formattedEndTime = formatHHMM(accumMs);
+        }
+      } else if (index === this.currentScheduleIndex && (this.currentState === 'active' || this.currentState === 'countdown')) {
+        // Currently running round: project based on timer remaining + remaining station switches
+        const secondsRemaining = (this.timer && typeof this.timer.getTimeRemaining === 'function')
+          ? this.timer.getTimeRemaining()
+          : (item.time || 30);
+        const T = this.circuitRotation ? (item.stations ? item.stations.length : this.teamCount) : 1;
+        const remainingRotations = Math.max(0, (T - 1) - this.currentRotationIndex);
+        const remainingSecInRound = secondsRemaining + (remainingRotations * (item.time + this.countdownTime + 4.5)) + 3;
+        const endMs = now.getTime() + (remainingSecInRound * 1000);
+        item.formattedStartTime = formatHHMM(now.getTime() - ((item.time - secondsRemaining) * 1000));
+        item.formattedEndTime = formatHHMM(endMs);
+        item.endTimeMs = endMs;
+        accumMs = endMs;
+      } else {
+        // Future planned round
+        const startMs = accumMs;
+        const endMs = startMs + (durationSec * 1000);
+        item.formattedStartTime = formatHHMM(startMs);
+        item.formattedEndTime = formatHHMM(endMs);
+        item.endTimeMs = endMs;
+        accumMs = endMs;
+      }
+    });
+
+    this.finalEstimatedEndTime = accumMs;
+    this.formattedFinalEndTime = formatHHMM(accumMs);
+  }
+
+  /**
+   * Recalibrates schedule work times so full training finishes max 3 minutes before classEndTime
+   */
+  optimizeScheduleTimes() {
+    if (!this.plannedSchedule || this.plannedSchedule.length === 0) return;
+
+    const now = new Date();
+    let totalAvailSec = 2700;
+
+    if (this.classStartTime && this.classEndTime) {
+      const [sH, sM] = this.classStartTime.split(':').map(Number);
+      const [eH, eM] = this.classEndTime.split(':').map(Number);
+      const startMin = sH * 60 + sM;
+      let endMin = eH * 60 + eM;
+      if (endMin < startMin) endMin += 24 * 60;
+      
+      if (!this._isSessionActive && this.usedHistory.length === 0) {
+        totalAvailSec = Math.max(300, (endMin - startMin) * 60);
+      } else {
+        const nowMin = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() / 60);
+        totalAvailSec = Math.max(180, (endMin - nowMin) * 60);
+      }
+    } else if (this.classEndTime) {
+      const [eH, eM] = this.classEndTime.split(':').map(Number);
+      const endMin = eH * 60 + eM;
+      const nowMin = now.getHours() * 60 + now.getMinutes() + (now.getSeconds() / 60);
+      totalAvailSec = Math.max(180, (endMin - nowMin) * 60);
+    }
+
+    const minW = Math.max(10, Math.ceil(this.minTime / 5) * 5);
+    const maxW = Math.max(minW, Math.floor(this.maxTime / 5) * 5);
+    const T = this.circuitRotation ? Math.max(1, this.teamCount) : 1;
+    const K = this.plannedSchedule.length;
+    if (K === 0) return;
+
+    const roundOverhead = 8 + ((T - 1) * 4.5) + (T * this.countdownTime);
+    const targetDurationSec = Math.max(K * (roundOverhead + T * minW), totalAvailSec - 60);
+    const targetTotalWork = Math.max(K * minW, Math.min(K * maxW, Math.round(((targetDurationSec - (K * roundOverhead)) / T) / 5) * 5));
+
+    const baseW = Math.max(minW, Math.min(maxW, Math.floor(targetTotalWork / (K * 5)) * 5));
+    for (let i = 0; i < K; i++) {
+      this.plannedSchedule[i].time = baseW;
+    }
+
+    let remainderSteps = Math.round((targetTotalWork - (K * baseW)) / 5);
+    let idx = Math.floor(K / 2);
+    let step = 1;
+    while (remainderSteps > 0) {
+      if (idx >= 0 && idx < K && this.plannedSchedule[idx].time + 5 <= maxW) {
+        this.plannedSchedule[idx].time += 5;
+        remainderSteps--;
+      }
+      idx += step;
+      step = step > 0 ? -(step + 1) : -step + 1;
+      if (Math.abs(step) > K) break;
+    }
+
+    let totalD = this.plannedSchedule.reduce((acc, it) => acc + this._getRoundDurationSeconds(it.time, T, this.circuitRotation), 0);
+    let safetyCounter = 0;
+    while (totalD > totalAvailSec && safetyCounter < 50) {
+      safetyCounter++;
+      let reduced = false;
+      for (let i = K - 1; i >= 0; i--) {
+        if (this.plannedSchedule[i].time - 5 >= minW) {
+          this.plannedSchedule[i].time -= 5;
+          totalD -= (T * 5);
+          reduced = true;
+          if (totalD <= totalAvailSec) break;
+        }
+      }
+      if (!reduced) break;
+    }
+
+    safetyCounter = 0;
+    while (totalD < totalAvailSec - 180 && safetyCounter < 50) {
+      safetyCounter++;
+      let increased = false;
+      for (let i = 0; i < K; i++) {
+        if (this.plannedSchedule[i].time + 5 <= maxW && (totalD + T * 5) <= totalAvailSec) {
+          this.plannedSchedule[i].time += 5;
+          totalD += (T * 5);
+          increased = true;
+          if (totalD >= totalAvailSec - 180) break;
+        }
+      }
+      if (!increased) break;
+    }
+
+    this._recalculateScheduleTimings();
+    this.renderSecretSchedule();
+    this.showToast("✓ Werktijden geoptimaliseerd voor eindtijd!");
   }
 
   /**
@@ -2223,6 +2543,7 @@ class WorkoutApp {
   openSecretPlanner(isOpen) {
     if (!this.elements.secretPlannerOverlay) return;
     if (isOpen) {
+      this._recalculateScheduleTimings();
       this.renderSecretSchedule();
       this.elements.secretPlannerOverlay.classList.add('open');
       this.elements.secretPlannerOverlay.setAttribute('aria-hidden', 'false');
@@ -2233,19 +2554,46 @@ class WorkoutApp {
   }
 
   /**
-   * Render the Secret Schedule UI list
+   * Render the Secret Schedule UI list with predetermined times and workout end times
    */
   renderSecretSchedule() {
     if (!this.elements.secretScheduleList || !this.elements.secretPlannerStats) return;
 
+    this._recalculateScheduleTimings();
+
     const totalCount = this.plannedSchedule.length;
-    const totalSecs = this.plannedSchedule.reduce((acc, item) => acc + item.time, 0);
+    const T = this.circuitRotation ? Math.max(1, this.teamCount) : 1;
+    const totalSecs = this.plannedSchedule.reduce((acc, item) => acc + (item.time * T), 0);
     const mins = Math.round(totalSecs / 60);
 
+    // Calculate diff from classEndTime for status reporting
+    let diffText = '';
+    let badgeColor = '#39ff14';
+    if (this.classEndTime && this.finalEstimatedEndTime) {
+      const now = new Date();
+      const [eH, eM] = this.classEndTime.split(':').map(Number);
+      const endDate = new Date(now);
+      endDate.setHours(eH, eM, 0, 0);
+      const diffSec = Math.round((endDate.getTime() - this.finalEstimatedEndTime) / 1000);
+      const diffMin = Math.round(diffSec / 60);
+
+      if (diffSec >= 0 && diffSec <= 180) {
+        diffText = `✅ ${diffMin <= 0 ? '<1' : diffMin} min voor lestijd (${this.classEndTime})`;
+        badgeColor = '#39ff14';
+      } else if (diffSec < 0) {
+        diffText = `⚠️ ${Math.abs(diffMin)} min na lestijd (${this.classEndTime})`;
+        badgeColor = 'var(--neon-pink)';
+      } else {
+        diffText = `⏱️ ${diffMin} min voor lestijd (${this.classEndTime})`;
+        badgeColor = 'var(--neon-yellow)';
+      }
+    }
+
     this.elements.secretPlannerStats.innerHTML = `
-      <span class="used-history-badge">📋 ${totalCount} Geplande oefeningen</span>
-      <span class="used-history-badge">⏱ ~${mins} min totale werktijd</span>
-      <span class="used-history-badge" style="color:#39ff14;">✓ Alle video's vooraf gecontroleerd</span>
+      <span class="used-history-badge">📋 ${totalCount} Geplande rondes</span>
+      <span class="used-history-badge">⏱ ~${mins} min totale actieve tijd</span>
+      <span class="used-history-badge" style="color:${badgeColor}; border-color:${badgeColor};">🏁 Klaar om: ${this.formattedFinalEndTime || '--:--'} (${diffText || 'Schema gereed'})</span>
+      <span class="used-history-badge" style="color:var(--neon-cyan); border-color:var(--neon-cyan);">🔄 ${this.circuitRotation ? `${this.teamCount} teams voltooien alle ${totalCount} rondes` : 'Alle teams synchroon'}</span>
     `;
 
     if (totalCount === 0) {
@@ -2257,7 +2605,7 @@ class WorkoutApp {
 
     const html = this.plannedSchedule.map((item, index) => {
       const isPast = index < this.currentScheduleIndex;
-      const isCurrent = index === this.currentScheduleIndex;
+      const isCurrent = index === this.currentScheduleIndex && (this.currentState === 'active' || this.currentState === 'countdown');
       const statusClass = isCurrent ? 'item-active' : (isPast ? 'item-done' : '');
 
       const vId = this._extractYouTubeId(item.exercise.video_search_url || '');
@@ -2272,16 +2620,39 @@ class WorkoutApp {
               <div class="secret-item-name">
                 ${(item.stations && item.stations.length > 1) 
                   ? `Ronde ${index + 1} (${item.stations.length} Stations Circuit)` 
-                  : item.exercise.exercise_name}
+                  : (item.exercise ? this._escapeHtml(item.exercise.exercise_name) : 'Oefening')}
               </div>
-              <div class="secret-item-meta" style="flex-wrap:wrap; gap:0.25rem;">
+              
+              <div class="secret-stations-grid">
                 ${(item.stations && item.stations.length > 1)
-                  ? item.stations.map((st, si) => `<span style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:0.75rem;">T${si+1}: ${st.material} - ${st.exercise.exercise_name}</span>`).join('')
-                  : `<span>📦 ${item.material}</span>`}
-                <span class="secret-item-time-badge">${item.time}s per wissel</span>
-                <span style="color:#39ff14; font-size:0.72rem;">● Video OK</span>
-                ${isCurrent ? '<span style="color:var(--neon-pink); font-weight:800;">[NU AAN DE BEURT]</span>' : ''}
-                ${isPast ? '<span style="color:#888;">[AFGEROND]</span>' : ''}
+                  ? item.stations.map((st, si) => `
+                    <div class="secret-station-chip" title="Team ${si + 1}: ${this._escapeHtml(st.material)} - ${this._escapeHtml(st.exercise.exercise_name)}">
+                      <span class="secret-station-team-tag team-${(si % 8) + 1}">T${si + 1}</span>
+                      <span class="secret-station-mat">${this._escapeHtml(st.material)}:</span>
+                      <span class="secret-station-name" onclick="window.workoutApp.openStationExercisePicker(${index}, ${si})" title="Klik om een specifieke oefening te kiezen">${this._escapeHtml(st.exercise.exercise_name)}</span>
+                      <button class="secret-station-dice-btn" onclick="event.stopPropagation(); window.workoutApp.replaceStationExercise(${index}, ${si})" title="🎲 Dobbel een andere oefening voor T${si + 1} (materiaal blijft uniek)">🎲</button>
+                    </div>
+                  `).join('')
+                  : `
+                    <div class="secret-station-chip" title="${this._escapeHtml(item.material)} - ${this._escapeHtml(item.exercise?.exercise_name || '')}">
+                      <span class="secret-station-mat">📦 ${this._escapeHtml(item.material)}:</span>
+                      <span class="secret-station-name" onclick="window.workoutApp.openStationExercisePicker(${index}, 0)" title="Klik om een specifieke oefening te kiezen">${this._escapeHtml(item.exercise?.exercise_name || '')}</span>
+                      <button class="secret-station-dice-btn" onclick="event.stopPropagation(); window.workoutApp.replaceStationExercise(${index}, 0)" title="🎲 Dobbel een andere oefening voor deze ronde">🎲</button>
+                    </div>
+                  `}
+              </div>
+
+              <div class="secret-item-meta" style="flex-wrap:wrap; gap:0.35rem; margin-top:0.35rem;">
+                <div class="secret-item-time-control" title="Pas de vooraf gekozen werktijd voor deze ronde aan">
+                  <button class="secret-time-stepper-btn" onclick="window.workoutApp.adjustScheduleItemTime(${index}, -5)" title="-5s">-</button>
+                  <span class="secret-item-time-badge">${item.time}s</span>
+                  <button class="secret-time-stepper-btn" onclick="window.workoutApp.adjustScheduleItemTime(${index}, 5)" title="+5s">+</button>
+                </div>
+
+                <span class="secret-item-endtime-badge" title="Tijd waarop deze workout klaar is">🏁 Klaar om: <strong>${item.formattedEndTime || '--:--'}</strong></span>
+
+                ${isCurrent ? '<span style="color:var(--neon-pink); font-weight:800; font-size:0.75rem;">[NU BEZIG]</span>' : ''}
+                ${isPast ? '<span style="color:#888; font-size:0.75rem;">[AFGEROND]</span>' : ''}
               </div>
             </div>
           </div>
@@ -2292,7 +2663,7 @@ class WorkoutApp {
             <button class="secret-item-btn" onclick="window.workoutApp.moveScheduleItem(${index}, 1)" ${index === totalCount - 1 ? 'disabled' : ''} title="Verplaats omlaag">
               ▼
             </button>
-            <button class="secret-item-btn" onclick="window.workoutApp.replaceScheduleItem(${index})" title="Vervang met een andere oefening">
+            <button class="secret-item-btn" onclick="window.workoutApp.replaceScheduleItem(${index})" title="Vervang alle stations in deze ronde">
               🎲
             </button>
             <button class="secret-item-btn btn-delete" onclick="window.workoutApp.deleteScheduleItem(${index})" title="Verwijder uit schema">
@@ -2307,6 +2678,19 @@ class WorkoutApp {
   }
 
   /**
+   * Adjust the predetermined work time of a specific workout in the schedule
+   */
+  adjustScheduleItemTime(index, delta) {
+    if (!this.plannedSchedule || !this.plannedSchedule[index]) return;
+    const minW = Math.max(10, this.minTime || 10);
+    const maxW = Math.max(minW, (this.maxTime || 60) + 30);
+    const newTime = Math.max(minW, Math.min(maxW, this.plannedSchedule[index].time + delta));
+    this.plannedSchedule[index].time = newTime;
+    this._recalculateScheduleTimings();
+    this.renderSecretSchedule();
+  }
+
+  /**
    * Move an exercise up or down in the planned schedule
    */
   moveScheduleItem(index, direction) {
@@ -2315,6 +2699,7 @@ class WorkoutApp {
     const temp = this.plannedSchedule[index];
     this.plannedSchedule[index] = this.plannedSchedule[target];
     this.plannedSchedule[target] = temp;
+    this._recalculateScheduleTimings();
     this.renderSecretSchedule();
   }
 
@@ -2330,6 +2715,7 @@ class WorkoutApp {
     if (this.currentScheduleIndex > index) {
       this.currentScheduleIndex = Math.max(0, this.currentScheduleIndex - 1);
     }
+    this._recalculateScheduleTimings();
     this.renderSecretSchedule();
   }
 
@@ -2337,55 +2723,389 @@ class WorkoutApp {
    * Replace a specific exercise with another random working one
    */
   async replaceScheduleItem(index) {
-    const allEnabled = [];
+    const activeMaterials = [];
+    const activeExercisesMap = {};
     for (const mat in this.database) {
-      for (const ex of this.database[mat]) {
-        if (!this.disabledExerciseIds.has(ex.id) && this._hasValidWorkingVideo(ex)) {
-          allEnabled.push({ ...ex, material: mat });
-        }
+      const exs = this.database[mat].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
+        return true;
+      });
+      if (exs.length > 0) {
+        activeMaterials.push(mat);
+        activeExercisesMap[mat] = exs;
+      }
+    }
+    if (activeMaterials.length === 0) return;
+
+    const roundStations = this._assignOptimalTeamStations(
+      this.teamCount,
+      this._createSimTracker(),
+      activeMaterials,
+      activeExercisesMap
+    );
+    if (!roundStations || roundStations.length === 0) return;
+
+    this.plannedSchedule[index].id = roundStations[0].exercise.id;
+    this.plannedSchedule[index].exercise = roundStations[0].exercise;
+    this.plannedSchedule[index].material = roundStations[0].material;
+    this.plannedSchedule[index].stations = roundStations;
+    this._recalculateScheduleTimings();
+    this.renderSecretSchedule();
+  }
+
+  /**
+   * Replace a single station's exercise in a specific round.
+   * Ensures the material of the new exercise is strictly NOT used by any other team in that same round!
+   */
+  replaceStationExercise(roundIndex, stationIndex) {
+    if (!this.plannedSchedule || !this.plannedSchedule[roundIndex]) return;
+    const item = this.plannedSchedule[roundIndex];
+
+    if (!item.stations || item.stations.length === 0) {
+      item.stations = [{
+        stationIndex: 0,
+        material: item.material || (item.exercise && item.exercise.material_name) || '',
+        exercise: item.exercise
+      }];
+    }
+
+    if (stationIndex < 0 || stationIndex >= item.stations.length) return;
+    const currentStation = item.stations[stationIndex];
+    const currentExId = currentStation.exercise ? currentStation.exercise.id : null;
+
+    // Collect materials used by other teams in this round (normalized lowercase)
+    const otherMaterials = new Set();
+    item.stations.forEach((st, idx) => {
+      if (idx !== stationIndex && st.material) {
+        otherMaterials.add(st.material.trim().toLowerCase());
+      }
+    });
+
+    // Find all valid candidate exercises whose material is NOT used by any other station
+    const candidates = [];
+    for (const mat in this.database) {
+      if (otherMaterials.has(mat.trim().toLowerCase())) {
+        continue; // Strictly forbidden: used by another team in this round!
+      }
+
+      const exs = this.database[mat].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
+        return true;
+      });
+
+      for (const ex of exs) {
+        candidates.push({
+          material: mat,
+          exercise: ex
+        });
       }
     }
 
-    const currentId = this.plannedSchedule[index]?.id;
-    const alternatives = allEnabled.filter(a => a.id !== currentId);
-    if (alternatives.length === 0) return;
+    if (candidates.length === 0) {
+      alert("Geen alternatieve oefening beschikbaar die aan de materiaal-voorwaarden voldoet.");
+      return;
+    }
 
-    const chosen = alternatives[Math.floor(Math.random() * alternatives.length)];
-    this.plannedSchedule[index].id = chosen.id;
-    this.plannedSchedule[index].exercise = chosen;
-    this.plannedSchedule[index].material = chosen.material;
+    // Filter out the current exercise if more than 1 candidate exists
+    let eligible = candidates.filter(c => c.exercise.id !== currentExId);
+    if (eligible.length === 0) eligible = candidates;
+
+    // Prioritize variety: count prior occurrences across all other rounds for this team
+    const exCounts = {};
+    const matCounts = {};
+    this.plannedSchedule.forEach((schedItem, rIdx) => {
+      if (rIdx === roundIndex) return;
+      const st = (schedItem.stations && schedItem.stations[stationIndex])
+        ? schedItem.stations[stationIndex]
+        : (stationIndex === 0 ? schedItem : null);
+      if (st) {
+        if (st.exercise) exCounts[st.exercise.id] = (exCounts[st.exercise.id] || 0) + 1;
+        if (st.material) matCounts[st.material] = (matCounts[st.material] || 0) + 1;
+      }
+    });
+
+    let minExCount = Infinity;
+    eligible.forEach(c => {
+      const cnt = exCounts[c.exercise.id] || 0;
+      if (cnt < minExCount) minExCount = cnt;
+    });
+    const leastUsedExs = eligible.filter(c => (exCounts[c.exercise.id] || 0) === minExCount);
+
+    let minMatCount = Infinity;
+    leastUsedExs.forEach(c => {
+      const cnt = matCounts[c.material] || 0;
+      if (cnt < minMatCount) minMatCount = cnt;
+    });
+    const bestPool = leastUsedExs.filter(c => (matCounts[c.material] || 0) === minMatCount);
+
+    const chosen = bestPool[Math.floor(Math.random() * bestPool.length)] || eligible[0];
+
+    this.setStationExercise(roundIndex, stationIndex, chosen.exercise, chosen.material);
+  }
+
+  /**
+   * Set a specific exercise for a station, verifying unique material constraint
+   */
+  setStationExercise(roundIndex, stationIndex, chosenExercise, chosenMaterial) {
+    if (!this.plannedSchedule || !this.plannedSchedule[roundIndex]) return;
+    const item = this.plannedSchedule[roundIndex];
+    if (!item.stations || !item.stations[stationIndex]) return;
+
+    // Verify material constraint
+    const otherMaterials = new Set();
+    item.stations.forEach((st, idx) => {
+      if (idx !== stationIndex && st.material) {
+        otherMaterials.add(st.material.trim().toLowerCase());
+      }
+    });
+    if (otherMaterials.has(chosenMaterial.trim().toLowerCase())) {
+      alert(`Het materiaal "${chosenMaterial}" wordt in deze ronde al door een ander team gebruikt!`);
+      return;
+    }
+
+    item.stations[stationIndex] = {
+      stationIndex: stationIndex,
+      material: chosenMaterial,
+      exercise: chosenExercise
+    };
+
+    if (stationIndex === 0) {
+      item.id = chosenExercise.id;
+      item.exercise = chosenExercise;
+      item.material = chosenMaterial;
+    }
+
+    const isCurrentActive = (roundIndex === this.currentScheduleIndex - 1) && 
+                            (this.currentState === 'active' || this.currentState === 'countdown');
+    if (isCurrentActive && this.activeStations && this.activeStations[stationIndex]) {
+      this.activeStations[stationIndex] = item.stations[stationIndex];
+      if (this.renderActiveStations) this.renderActiveStations();
+      if (stationIndex === (this.activeStationPreviewIndex || 0)) {
+        this.currentExercise = chosenExercise;
+        this.currentMaterial = chosenMaterial;
+        this.updateExerciseDisplay(chosenExercise, chosenMaterial);
+      }
+    }
+
+    if (this._stationPickerModal) {
+      this._stationPickerModal.style.display = 'none';
+    }
+
+    if (window.audioEngine && typeof window.audioEngine.playSwoosh === 'function') {
+      window.audioEngine.playSwoosh();
+    }
+
+    this._recalculateScheduleTimings();
     this.renderSecretSchedule();
+  }
+
+  /**
+   * Look up exercise by ID and assign to station
+   */
+  setStationExerciseById(roundIndex, stationIndex, exerciseId) {
+    let foundEx = null;
+    let foundMat = null;
+    for (const mat in this.database) {
+      const match = this.database[mat].find(e => e.id === exerciseId);
+      if (match) {
+        foundEx = match;
+        foundMat = mat;
+        break;
+      }
+    }
+    if (foundEx && foundMat) {
+      this.setStationExercise(roundIndex, stationIndex, foundEx, foundMat);
+    }
+  }
+
+  /**
+   * Opens an interactive exercise selector modal for a specific station,
+   * showing only exercises whose material is NOT used by any other team in that round.
+   */
+  openStationExercisePicker(roundIndex, stationIndex) {
+    if (!this.plannedSchedule || !this.plannedSchedule[roundIndex]) return;
+    const item = this.plannedSchedule[roundIndex];
+    if (!item.stations || !item.stations[stationIndex]) return;
+
+    const currentStation = item.stations[stationIndex];
+    const currentExId = currentStation.exercise ? currentStation.exercise.id : null;
+
+    const otherMaterials = new Set();
+    const otherMaterialNames = [];
+    item.stations.forEach((st, idx) => {
+      if (idx !== stationIndex && st.material) {
+        otherMaterials.add(st.material.trim().toLowerCase());
+        otherMaterialNames.push(`T${idx + 1}: ${st.material}`);
+      }
+    });
+
+    const grouped = {};
+    for (const mat in this.database) {
+      if (otherMaterials.has(mat.trim().toLowerCase())) {
+        continue;
+      }
+
+      const exs = this.database[mat].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
+        return true;
+      });
+
+      if (exs.length > 0) {
+        grouped[mat] = exs;
+      }
+    }
+
+    let modal = document.getElementById('station-exercise-picker-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'station-exercise-picker-modal';
+      modal.className = 'station-picker-backdrop';
+      document.body.appendChild(modal);
+    }
+    this._stationPickerModal = modal;
+
+    const renderPickerContent = (searchQuery = '') => {
+      const q = searchQuery.toLowerCase().trim();
+      let groupsHtml = '';
+      let totalShown = 0;
+
+      for (const mat in grouped) {
+        const exs = grouped[mat].filter(e => {
+          if (!q) return true;
+          return e.exercise_name.toLowerCase().includes(q) || mat.toLowerCase().includes(q);
+        });
+
+        if (exs.length === 0) continue;
+        totalShown += exs.length;
+
+        groupsHtml += `
+          <div class="station-picker-mat-group">
+            <div class="station-picker-mat-title">📦 ${this._escapeHtml(mat)} <span style="font-size:0.75rem; color:#888;">(${exs.length})</span></div>
+            <div class="station-picker-ex-grid">
+              ${exs.map(ex => {
+                const isSelected = ex.id === currentExId;
+                const vId = this._extractYouTubeId(ex.video_search_url || '');
+                const thumb = (ex.thumbnail || '').trim() || (vId ? `https://img.youtube.com/vi/${vId}/hqdefault.jpg` : '');
+                return `
+                  <div class="station-picker-ex-card ${isSelected ? 'is-selected' : ''}" 
+                       onclick="window.workoutApp.setStationExerciseById(${roundIndex}, ${stationIndex}, '${ex.id}')">
+                    ${thumb ? `<img class="station-picker-ex-thumb" src="${thumb}" alt="${this._escapeHtml(ex.exercise_name)}">` : ''}
+                    <div class="station-picker-ex-name" title="${this._escapeHtml(ex.exercise_name)}">
+                      ${this._escapeHtml(ex.exercise_name)}
+                    </div>
+                    ${isSelected ? '<span style="font-size:0.7rem; color:var(--neon-pink); font-weight:800; margin-left:auto;">Actief</span>' : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      if (totalShown === 0) {
+        groupsHtml = `<div style="text-align:center; padding:2rem; color:#888;">Geen oefeningen gevonden die voldoen aan de zoekopdracht en materiaal-voorwaarden.</div>`;
+      }
+
+      return groupsHtml;
+    };
+
+    modal.innerHTML = `
+      <div class="station-picker-card">
+        <div class="station-picker-header">
+          <div>
+            <h3 class="station-picker-title">
+              🎯 Kies oefening voor Team ${stationIndex + 1} (Ronde ${roundIndex + 1})
+            </h3>
+            <p class="station-picker-subtitle">
+              ⚠️ Materiaal mag niet botsen met andere teams. 
+              ${otherMaterialNames.length > 0 ? `Reeds bezet: <strong>${otherMaterialNames.join(', ')}</strong>` : 'Geen materiaalconflicten.'}
+            </p>
+          </div>
+          <button class="admin-close" onclick="document.getElementById('station-exercise-picker-modal').style.display='none';">✕</button>
+        </div>
+        <div class="station-picker-search-box">
+          <input type="text" id="station-picker-search-input" class="station-picker-search-input" placeholder="🔍 Zoek op oefening of materiaal..." />
+        </div>
+        <div class="station-picker-body" id="station-picker-body">
+          ${renderPickerContent()}
+        </div>
+        <div class="station-picker-footer">
+          <button class="btn btn-outline btn-small" onclick="document.getElementById('station-exercise-picker-modal').style.display='none';">Annuleren</button>
+          <button class="btn btn-cyan btn-small" onclick="window.workoutApp.replaceStationExercise(${roundIndex}, ${stationIndex}); document.getElementById('station-exercise-picker-modal').style.display='none';">🎲 Willekeurig Dobbelen</button>
+        </div>
+      </div>
+    `;
+
+    modal.style.display = 'flex';
+
+    const searchInput = modal.querySelector('#station-picker-search-input');
+    const bodyEl = modal.querySelector('#station-picker-body');
+    if (searchInput && bodyEl) {
+      searchInput.addEventListener('input', (e) => {
+        bodyEl.innerHTML = renderPickerContent(e.target.value);
+      });
+      setTimeout(() => searchInput.focus(), 50);
+    }
+  }
+
+  /**
+   * Safe HTML string escaping
+   */
+  _escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   /**
    * Add a new exercise to the end of the planned schedule
    */
   async addExerciseToSchedule() {
-    const allEnabled = [];
+    const activeMaterials = [];
+    const activeExercisesMap = {};
     for (const mat in this.database) {
-      for (const ex of this.database[mat]) {
-        if (!this.disabledExerciseIds.has(ex.id) && this._hasValidWorkingVideo(ex)) {
-          allEnabled.push({ ...ex, material: mat });
-        }
+      const exs = this.database[mat].filter(ex => {
+        if (this.disabledExerciseIds.has(ex.id)) return false;
+        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
+        return true;
+      });
+      if (exs.length > 0) {
+        activeMaterials.push(mat);
+        activeExercisesMap[mat] = exs;
       }
     }
-    if (allEnabled.length === 0) return;
+    if (activeMaterials.length === 0) return;
 
-    const chosen = allEnabled[Math.floor(Math.random() * allEnabled.length)];
-    const minStep = Math.ceil(this.minTime / 10) * 10;
-    const maxStep = Math.floor(this.maxTime / 10) * 10;
-    const timeChoices = [];
-    for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
-    const chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
+    const roundStations = this._assignOptimalTeamStations(
+      this.teamCount,
+      this._createSimTracker(),
+      activeMaterials,
+      activeExercisesMap
+    );
+    if (!roundStations || roundStations.length === 0) return;
+
+    const midW = Math.round(((this.minTime + this.maxTime) / 2) / 5) * 5;
+    const defaultTime = this.plannedSchedule.length > 0
+      ? this.plannedSchedule[this.plannedSchedule.length - 1].time
+      : midW;
 
     this.plannedSchedule.push({
-      id: chosen.id,
-      exercise: chosen,
-      material: chosen.material,
-      time: chosenTime,
+      id: roundStations[0].exercise.id,
+      exercise: roundStations[0].exercise,
+      material: roundStations[0].material,
+      stations: roundStations,
+      time: defaultTime,
       status: 'pending',
       videoValid: true
     });
+    this._recalculateScheduleTimings();
     this.renderSecretSchedule();
   }
 
@@ -2750,12 +3470,21 @@ class WorkoutApp {
       item.status = 'active';
       this.currentScheduleIndex++;
     } else {
-      // Beyond initial schedule: pick time choices and multi-team stations
-      const minStep = Math.ceil(this.minTime / 10) * 10;
-      const maxStep = Math.floor(this.maxTime / 10) * 10;
-      const timeChoices = [];
-      for (let t = minStep; t <= maxStep; t += 10) timeChoices.push(t);
-      chosenTime = timeChoices[Math.floor(Math.random() * timeChoices.length)] || 40;
+      // Beyond initial schedule: calculate suitable work time to finish before classEndTime
+      let chosenTime = Math.max(10, Math.ceil(this.minTime / 5) * 5);
+      if (this.classEndTime) {
+        const [h, m] = this.classEndTime.split(':').map(Number);
+        const now = new Date();
+        const end = new Date(now);
+        end.setHours(h, m, 0, 0);
+        const remainingSec = (end - now) / 1000;
+        const T = this.circuitRotation ? Math.max(1, this.teamCount) : 1;
+        const overhead = 8 + ((T - 1) * 4.5) + (T * this.countdownTime);
+        const calculatedW = Math.floor(((remainingSec - overhead - 30) / T) / 5) * 5;
+        chosenTime = Math.max(this.minTime, Math.min(this.maxTime, calculatedW));
+      } else {
+        chosenTime = Math.round(((this.minTime + this.maxTime) / 2) / 5) * 5;
+      }
 
       chosenStations = this._pickMultiTeamStations(this.teamCount);
       if (chosenStations.length === 0) {
@@ -2775,6 +3504,7 @@ class WorkoutApp {
         status: 'active'
       });
       this.currentScheduleIndex = this.plannedSchedule.length;
+      this._recalculateScheduleTimings();
     }
 
     // Increment count of exercises performed in this session
@@ -2885,8 +3615,8 @@ class WorkoutApp {
       const now = new Date();
       const end = new Date(now);
       end.setHours(h, m, 0, 0);
-      const remainingSecAfterThis = ((end - now) / 1000) - (this.countdownTime + this.activeTime);
-      const requiredNext = this.countdownTime + this.minTime;
+      const remainingSecAfterThis = ((end - now) / 1000) - this._getRoundDurationSeconds(this.activeTime, this.teamCount, this.circuitRotation);
+      const requiredNext = this._getRoundDurationSeconds(this.minTime, this.teamCount, this.circuitRotation);
       if (remainingSecAfterThis < requiredNext) {
         return true;
       }
@@ -2946,13 +3676,25 @@ class WorkoutApp {
   renderStationsHUD() {
     const T = this.teamCount;
 
-    // 1. Rotation badge above timer
+    // 1. Rotation badge & Round Finish Time badge above timer
     if (this.elements.circuitRotationBadge) {
       if (this.circuitRotation && T > 1) {
         this.elements.circuitRotationBadge.textContent = `WISSEL ${this.currentRotationIndex + 1} / ${T}`;
         this.elements.circuitRotationBadge.style.display = 'inline-block';
       } else {
         this.elements.circuitRotationBadge.style.display = 'none';
+      }
+    }
+
+    if (this.elements.workoutEndTimeBadge) {
+      const activeItem = (this.plannedSchedule && this.currentScheduleIndex > 0)
+        ? this.plannedSchedule[this.currentScheduleIndex - 1]
+        : null;
+      if (activeItem && activeItem.formattedEndTime) {
+        this.elements.workoutEndTimeBadge.textContent = `🏁 KLAAR OM ${activeItem.formattedEndTime}`;
+        this.elements.workoutEndTimeBadge.style.display = 'inline-block';
+      } else {
+        this.elements.workoutEndTimeBadge.style.display = 'none';
       }
     }
 
@@ -3345,6 +4087,9 @@ class WorkoutApp {
   handleWorkoutReset() {
     this.timer.stop();
     this._stopYouTubeIframe();
+    if (this.elements.workoutEndTimeBadge) {
+      this.elements.workoutEndTimeBadge.style.display = 'none';
+    }
     this.elements.spinBtn.disabled = false;
     this.elements.adminOpenBtn.disabled = false;
     this.switchView('idle');

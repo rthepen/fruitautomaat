@@ -205,6 +205,27 @@ class WorkoutTimer {
   }
 
   /**
+   * Check if timer is actively running or counting down
+   */
+  get isRunning() {
+    return this.state === 'COUNTDOWN' || this.state === 'RUNNING';
+  }
+
+  /**
+   * Get remaining seconds in current state
+   */
+  getTimeRemaining() {
+    if (this.state === 'COUNTDOWN') {
+      const remainingMs = (this.countdownDuration * 1000) - this.elapsedTime;
+      return Math.max(0, Math.ceil(remainingMs / 1000));
+    } else if (this.state === 'RUNNING') {
+      const remainingMs = (this.duration * 1000) - this.elapsedTime;
+      return Math.max(0, Math.ceil(remainingMs / 1000));
+    }
+    return this.duration || 0;
+  }
+
+  /**
    * Get progress fraction from 0.0 to 1.0 (for graphics/circle indicator)
    */
   getProgress() {

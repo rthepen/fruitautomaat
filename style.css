@@ -271,6 +271,19 @@ header {
   white-space: nowrap;
 }
 
+.workout-endtime-badge {
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--neon-cyan);
+  border: 1px solid var(--neon-cyan);
+  text-shadow: var(--shadow-cyan);
+  white-space: nowrap;
+}
+
 .unified-timer-label {
   font-family: var(--font-display);
   font-size: 0.88rem;
@@ -2436,12 +2449,57 @@ header {
   margin-top: 0.15rem;
 }
 
+.secret-item-time-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 1px 3px;
+}
+
+.secret-time-stepper-btn {
+  background: transparent;
+  border: none;
+  color: var(--neon-cyan);
+  font-weight: 900;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+}
+
+.secret-time-stepper-btn:hover {
+  background: rgba(0, 240, 255, 0.25);
+  color: #fff;
+}
+
 .secret-item-time-badge {
   background: rgba(255, 255, 255, 0.08);
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
   font-weight: 700;
   color: var(--neon-yellow);
+}
+
+.secret-item-endtime-badge {
+  background: rgba(57, 255, 20, 0.12);
+  border: 1px solid rgba(57, 255, 20, 0.35);
+  padding: 0.15rem 0.5rem;
+  border-radius: 5px;
+  font-weight: 800;
+  color: #39ff14;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.secret-item-endtime-badge strong {
+  color: #fff;
+  text-shadow: 0 0 6px rgba(57, 255, 20, 0.6);
 }
 
 .secret-item-right {
@@ -2478,6 +2536,261 @@ header {
 .secret-item-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+/* Station Chips & Station Dice in Secret Planner */
+.secret-stations-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+  margin-bottom: 0.2rem;
+}
+
+.secret-station-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.76rem;
+  color: #ddd;
+  transition: all 0.2s ease;
+}
+
+.secret-station-chip:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(0, 240, 255, 0.4);
+}
+
+.secret-station-team-tag {
+  font-weight: 800;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  line-height: 1.1;
+  background: rgba(0, 240, 255, 0.18);
+  color: var(--neon-cyan);
+}
+
+.secret-station-team-tag.team-1 { color: #ff007f; background: rgba(255, 0, 127, 0.2); }
+.secret-station-team-tag.team-2 { color: #00f0ff; background: rgba(0, 240, 255, 0.2); }
+.secret-station-team-tag.team-3 { color: #39ff14; background: rgba(57, 255, 20, 0.2); }
+.secret-station-team-tag.team-4 { color: #ffe600; background: rgba(255, 230, 0, 0.2); }
+.secret-station-team-tag.team-5 { color: #bf00ff; background: rgba(191, 0, 255, 0.2); }
+.secret-station-team-tag.team-6 { color: #ff5e00; background: rgba(255, 94, 0, 0.2); }
+.secret-station-team-tag.team-7 { color: #00ffaa; background: rgba(0, 255, 170, 0.2); }
+.secret-station-team-tag.team-8 { color: #ff0055; background: rgba(255, 0, 85, 0.2); }
+
+.secret-station-mat {
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.secret-station-name {
+  color: #c0c0e0;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: underline dotted rgba(255, 255, 255, 0.3);
+  transition: all 0.15s ease;
+}
+
+.secret-station-name:hover {
+  color: #fff;
+  text-decoration-color: var(--neon-cyan);
+}
+
+.secret-station-dice-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 4px;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.15s ease;
+  margin-left: 0.15rem;
+}
+
+.secret-station-dice-btn:hover {
+  background: rgba(255, 0, 127, 0.25);
+  border-color: var(--neon-pink);
+  transform: scale(1.15) rotate(15deg);
+  box-shadow: 0 0 8px rgba(255, 0, 127, 0.5);
+}
+
+.secret-station-dice-btn:active {
+  transform: scale(0.95) rotate(-10deg);
+}
+
+/* Station Exercise Picker Modal */
+.station-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(8px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  animation: fadeIn 0.2s ease;
+}
+
+.station-picker-card {
+  background: #0d0e15;
+  border: 1px solid rgba(0, 240, 255, 0.35);
+  box-shadow: 0 0 35px rgba(0, 240, 255, 0.2);
+  border-radius: 16px;
+  width: 95%;
+  max-width: 650px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.station-picker-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.station-picker-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 0 0 0.25rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.station-picker-subtitle {
+  font-size: 0.78rem;
+  color: #aaaacc;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.station-picker-search-box {
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.station-picker-search-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  padding: 0.55rem 0.85rem;
+  color: #fff;
+  font-size: 0.85rem;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.station-picker-search-input:focus {
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+}
+
+.station-picker-body {
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.station-picker-mat-group {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 0.75rem;
+}
+
+.station-picker-mat-title {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--neon-cyan);
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.station-picker-ex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+
+.station-picker-ex-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.station-picker-ex-card:hover {
+  background: rgba(0, 240, 255, 0.15);
+  border-color: var(--neon-cyan);
+  transform: translateY(-1px);
+}
+
+.station-picker-ex-card.is-selected {
+  background: rgba(255, 0, 127, 0.18);
+  border-color: var(--neon-pink);
+}
+
+.station-picker-ex-thumb {
+  width: 36px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: #000;
+  flex-shrink: 0;
+}
+
+.station-picker-ex-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.station-picker-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 /* Secret Dev Tools Panel */
