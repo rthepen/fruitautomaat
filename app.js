@@ -4285,15 +4285,6 @@ class WorkoutApp {
       const isBroken = this.brokenVideoExerciseIds.has(ex.id);
       const thumb = (ex.thumbnail || '').trim() || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
 
-      const diffLabels = { beginner: '🟢 BEGINNER', intermediate: '🟡 GEMIDDELD', advanced: '🔴 GEVORDERD' };
-      const diffHtml = ex.difficulty ? `<span class="team-video-diff diff-${ex.difficulty}">${diffLabels[ex.difficulty] || ex.difficulty.toUpperCase()}</span>` : '';
-      const starsHtml = ex.rating > 0 ? `<span class="team-video-stars">${'⭐'.repeat(ex.rating)}</span>` : '';
-      const musclesHtml = Array.isArray(ex.target_muscles) && ex.target_muscles.length > 0
-        ? ex.target_muscles.slice(0, 3).map(m => `<span class="team-muscle-tag">${m.replace(/_/g, ' ')}</span>`).join('')
-        : (mat ? `<span class="team-muscle-tag">${mat}</span>` : '');
-      const cueText = Array.isArray(ex.form_cues) && ex.form_cues.length > 0 ? ex.form_cues[0] : '';
-      const cueHtml = cueText ? `<div class="team-video-cue" title="${cueText}">💡 ${cueText}</div>` : '';
-
       const card = document.createElement('div');
       card.className = `team-video-card team-card-${teamNum}`;
 
@@ -4334,23 +4325,12 @@ class WorkoutApp {
             <span class="team-video-badge team-badge-${teamNum}">
               <span class="team-dot"></span> TEAM ${teamNum}
             </span>
-            <span class="team-video-station-num">STATION ${stationIdx + 1}</span>
+            <span class="team-video-mat-title">📦 ${mat}</span>
           </div>
-          <div class="team-video-info">
-            <span class="team-video-ex-title" title="${ex.exercise_name || ''}">${ex.exercise_name || '---'}</span>
-            <div class="team-video-sub-row">
-              <span class="team-video-mat-title">📦 ${mat}</span>
-              ${diffHtml}
-              ${starsHtml}
-            </div>
-          </div>
+          <div class="team-video-ex-title" title="${ex.exercise_name || ''}">${ex.exercise_name || '---'}</div>
         </div>
         <div class="team-video-player-wrap">
           ${playerMarkup}
-        </div>
-        <div class="team-video-footer">
-          ${musclesHtml ? `<div class="team-video-muscles">${musclesHtml}</div>` : ''}
-          ${cueHtml}
         </div>
       `;
 

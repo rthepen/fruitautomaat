@@ -4278,12 +4278,12 @@ header {
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.8);
 }
 
-/* Team Card Header */
+/* Team Card Header - Ultra compact to maximize video space */
 .mode-shorts .team-video-header {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.45rem 0.75rem;
+  gap: 0.2rem;
+  padding: 0.35rem 0.6rem;
   background: rgba(20, 20, 32, 0.95);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
@@ -4293,29 +4293,23 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.4rem;
 }
 
 .mode-shorts .team-video-ex-title {
   font-family: var(--font-display);
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 800;
   color: #fff;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
-}
-
-.mode-shorts .team-video-sub-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.25);
+  line-height: 1.2;
 }
 
 .mode-shorts .team-video-mat-title {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--neon-cyan);
   background: rgba(0, 255, 255, 0.12);
   border: 1px solid rgba(0, 255, 255, 0.25);
@@ -4323,53 +4317,24 @@ header {
   border-radius: 4px;
   font-weight: 700;
   text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55%;
 }
 
-.team-video-diff {
-  font-size: 0.65rem;
-  font-weight: 800;
-  padding: 1px 5px;
-  border-radius: 4px;
-  letter-spacing: 0.5px;
-}
-
-.team-video-diff.diff-beginner {
-  background: rgba(57, 255, 20, 0.15);
-  color: #39ff14;
-  border: 1px solid rgba(57, 255, 20, 0.35);
-}
-
-.team-video-diff.diff-intermediate {
-  background: rgba(255, 230, 0, 0.15);
-  color: #ffe600;
-  border: 1px solid rgba(255, 230, 0, 0.35);
-}
-
-.team-video-diff.diff-advanced {
-  background: rgba(255, 0, 127, 0.15);
-  color: #ff007f;
-  border: 1px solid rgba(255, 0, 127, 0.35);
-}
-
-.team-video-stars {
-  font-size: 0.68rem;
-  color: #ffd700;
-  letter-spacing: 1px;
-}
-
-/* 9:16 Video Player Wrap inside Card */
+/* 9:16 Video Player Wrap inside Card - Maximized space */
 .mode-shorts .team-video-player-wrap {
   position: relative;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   height: 100%;
-  width: auto;
-  max-width: 100%;
+  width: 100%;
   aspect-ratio: 9 / 16;
   margin: 0 auto;
   background: #000;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: 0 0 14px 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4395,46 +4360,6 @@ header {
   object-fit: cover;
 }
 
-/* Card Footer with Muscles & Cue */
-.team-video-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.35rem 0.75rem;
-  background: rgba(14, 14, 22, 0.95);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
-}
-
-.team-video-muscles {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  flex-wrap: wrap;
-}
-
-.team-muscle-tag {
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #cfd3dc;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-
-.team-video-cue {
-  font-size: 0.68rem;
-  color: #ffd700;
-  background: rgba(255, 215, 0, 0.08);
-  border: 1px solid rgba(255, 215, 0, 0.2);
-  padding: 2px 6px;
-  border-radius: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 /* PUZZLE GRIDS PER TEAM COUNT */
 
 /* 2 TEAMS: 2 large cards side by side */
@@ -4446,15 +4371,15 @@ header {
 }
 
 @media (min-width: 1200px) {
-  /* On large screens, 2 teams use a wide split layout (video on left, full coaching info on right) */
+  /* On large screens, 2 teams use a wide split layout (video on left, clean info on right) */
   .mode-shorts .multi-video-grid.grid-teams-2 .team-video-card {
     display: grid;
     grid-template-columns: auto 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 1fr;
     align-items: stretch;
   }
   .mode-shorts .multi-video-grid.grid-teams-2 .team-video-player-wrap {
-    grid-row: 1 / -1;
+    grid-row: 1;
     grid-column: 1;
     height: 100%;
     aspect-ratio: 9 / 16;
@@ -4466,12 +4391,16 @@ header {
     grid-row: 1;
     border-bottom: none;
     border-left: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.6rem;
+    padding: 1rem 1.25rem;
   }
-  .mode-shorts .multi-video-grid.grid-teams-2 .team-video-footer {
-    grid-column: 2;
-    grid-row: 2;
-    border-top: none;
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
+  .mode-shorts .multi-video-grid.grid-teams-2 .team-video-ex-title {
+    font-size: 1.15rem;
+    white-space: normal;
+    line-height: 1.3;
   }
 }
 
@@ -4529,7 +4458,7 @@ header {
 .mode-shorts .multi-video-grid.is-multi-row .team-video-card {
   display: grid;
   grid-template-columns: auto 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: 1fr;
   align-items: stretch;
   height: 100%;
   max-height: 100%;
@@ -4538,7 +4467,7 @@ header {
 .mode-shorts .multi-video-grid.grid-teams-7 .team-video-player-wrap,
 .mode-shorts .multi-video-grid.grid-teams-8 .team-video-player-wrap,
 .mode-shorts .multi-video-grid.is-multi-row .team-video-player-wrap {
-  grid-row: 1 / -1;
+  grid-row: 1;
   grid-column: 1;
   height: 100%;
   max-height: 100%;
@@ -4557,13 +4486,14 @@ header {
 .mode-shorts .multi-video-grid.is-multi-row .team-video-header {
   grid-column: 2;
   grid-row: 1;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: none;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0.35rem 0.6rem;
+  padding: 0.5rem 0.6rem;
   background: rgba(20, 20, 32, 0.95);
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  justify-content: center;
+  gap: 0.35rem;
   min-width: 0;
 }
 
@@ -4571,34 +4501,25 @@ header {
 .mode-shorts .multi-video-grid.grid-teams-8 .team-video-header-top,
 .mode-shorts .multi-video-grid.is-multi-row .team-video-header-top {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.35rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
 }
 
 .mode-shorts .multi-video-grid.grid-teams-7 .team-video-ex-title,
 .mode-shorts .multi-video-grid.grid-teams-8 .team-video-ex-title,
 .mode-shorts .multi-video-grid.is-multi-row .team-video-ex-title {
   font-family: var(--font-display);
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   font-weight: 800;
   color: #fff;
   white-space: normal;
-  line-height: 1.15;
+  line-height: 1.2;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
-}
-
-.mode-shorts .multi-video-grid.grid-teams-7 .team-video-sub-row,
-.mode-shorts .multi-video-grid.grid-teams-8 .team-video-sub-row,
-.mode-shorts .multi-video-grid.is-multi-row .team-video-sub-row {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  flex-wrap: wrap;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
 }
 
 .mode-shorts .multi-video-grid.grid-teams-7 .team-video-mat-title,
@@ -4606,52 +4527,7 @@ header {
 .mode-shorts .multi-video-grid.is-multi-row .team-video-mat-title {
   font-size: 0.65rem;
   padding: 1px 5px;
-}
-
-.mode-shorts .multi-video-grid.grid-teams-7 .team-video-footer,
-.mode-shorts .multi-video-grid.grid-teams-8 .team-video-footer,
-.mode-shorts .multi-video-grid.is-multi-row .team-video-footer {
-  grid-column: 2;
-  grid-row: 2;
-  border-top: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 0.35rem 0.6rem;
-  background: rgba(14, 14, 22, 0.95);
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 0.3rem;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.mode-shorts .multi-video-grid.grid-teams-7 .team-video-muscles,
-.mode-shorts .multi-video-grid.grid-teams-8 .team-video-muscles,
-.mode-shorts .multi-video-grid.is-multi-row .team-video-muscles {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  flex-wrap: wrap;
-}
-
-.mode-shorts .multi-video-grid.grid-teams-7 .team-muscle-tag,
-.mode-shorts .multi-video-grid.grid-teams-8 .team-muscle-tag,
-.mode-shorts .multi-video-grid.is-multi-row .team-muscle-tag {
-  font-size: 0.62rem;
-  padding: 1px 4px;
-}
-
-.mode-shorts .multi-video-grid.grid-teams-7 .team-video-cue,
-.mode-shorts .multi-video-grid.grid-teams-8 .team-video-cue,
-.mode-shorts .multi-video-grid.is-multi-row .team-video-cue {
-  font-size: 0.68rem;
-  white-space: normal;
-  line-height: 1.25;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  padding: 2px 5px;
+  max-width: 100%;
 }
 
 /* Responsive Breakpoints for Shorts Mode */
@@ -4668,7 +4544,7 @@ header {
   .mode-shorts .multi-video-grid.grid-teams-6 .team-video-card {
     display: grid;
     grid-template-columns: auto 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 1fr;
     align-items: stretch;
     height: 100%;
     max-height: 100%;
@@ -4676,7 +4552,7 @@ header {
 
   .mode-shorts .multi-video-grid.grid-teams-5 .team-video-player-wrap,
   .mode-shorts .multi-video-grid.grid-teams-6 .team-video-player-wrap {
-    grid-row: 1 / -1;
+    grid-row: 1;
     grid-column: 1;
     height: 100%;
     max-height: 100%;
@@ -4694,41 +4570,37 @@ header {
   .mode-shorts .multi-video-grid.grid-teams-6 .team-video-header {
     grid-column: 2;
     grid-row: 1;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: none;
     border-left: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 0.35rem 0.6rem;
+    padding: 0.4rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.3rem;
     min-width: 0;
   }
 
-  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-footer,
-  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-footer {
-    grid-column: 2;
-    grid-row: 2;
-    border-top: none;
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 0.35rem 0.6rem;
-    min-width: 0;
-    overflow: hidden;
+  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-header-top,
+  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-header-top {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
   }
 
   .mode-shorts .multi-video-grid.grid-teams-5 .team-video-ex-title,
   .mode-shorts .multi-video-grid.grid-teams-6 .team-video-ex-title {
     white-space: normal;
-    line-height: 1.15;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-cue,
-  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-cue {
-    white-space: normal;
-    line-height: 1.25;
+    line-height: 1.2;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-mat-title,
+  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-mat-title {
+    max-width: 100%;
   }
 }
 
@@ -4745,7 +4617,7 @@ header {
   .mode-shorts .multi-video-grid.grid-teams-4 .team-video-card {
     display: grid;
     grid-template-columns: auto 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: 1fr;
     align-items: stretch;
     height: 100%;
     max-height: 100%;
@@ -4753,7 +4625,7 @@ header {
 
   .mode-shorts .multi-video-grid.grid-teams-3 .team-video-player-wrap,
   .mode-shorts .multi-video-grid.grid-teams-4 .team-video-player-wrap {
-    grid-row: 1 / -1;
+    grid-row: 1;
     grid-column: 1;
     height: 100%;
     max-height: 100%;
@@ -4771,41 +4643,37 @@ header {
   .mode-shorts .multi-video-grid.grid-teams-4 .team-video-header {
     grid-column: 2;
     grid-row: 1;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: none;
     border-left: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 0.35rem 0.6rem;
+    padding: 0.4rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.3rem;
     min-width: 0;
   }
 
-  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-footer,
-  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-footer {
-    grid-column: 2;
-    grid-row: 2;
-    border-top: none;
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
-    padding: 0.35rem 0.6rem;
-    min-width: 0;
-    overflow: hidden;
+  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-header-top,
+  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-header-top {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
   }
 
   .mode-shorts .multi-video-grid.grid-teams-3 .team-video-ex-title,
   .mode-shorts .multi-video-grid.grid-teams-4 .team-video-ex-title {
     white-space: normal;
-    line-height: 1.15;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-cue,
-  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-cue {
-    white-space: normal;
-    line-height: 1.25;
+    line-height: 1.2;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-mat-title,
+  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-mat-title {
+    max-width: 100%;
   }
 }
 
