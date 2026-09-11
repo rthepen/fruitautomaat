@@ -346,25 +346,47 @@
                 <label for="require-shorts-input" class="toggle-label"></label>
               </div>
             </div>
-            <div class="input-group">
-              <label for="filter-difficulty-select">Moeilijkheidsgraad</label>
-              <select id="filter-difficulty-select">
-                <option value="all">Alle niveaus</option>
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Gemiddeld (Intermediate)</option>
-                <option value="advanced">Gevorderd (Advanced)</option>
-              </select>
+            <div class="input-group full-width-group">
+              <label>Moeilijkheidsgraad (meerdere selecteerbaar)</label>
+              <div class="filter-chip-group" id="filter-difficulty-chips">
+                <label class="filter-chip chip-beginner">
+                  <input type="checkbox" value="beginner" checked>
+                  <span class="chip-label">🟢 Beginner</span>
+                </label>
+                <label class="filter-chip chip-intermediate">
+                  <input type="checkbox" value="intermediate" checked>
+                  <span class="chip-label">🟡 Gemiddeld</span>
+                </label>
+                <label class="filter-chip chip-advanced">
+                  <input type="checkbox" value="advanced" checked>
+                  <span class="chip-label">🔴 Gevorderd</span>
+                </label>
+              </div>
             </div>
-            <div class="input-group">
-              <label for="filter-rating-select">Aantal sterren</label>
-              <select id="filter-rating-select">
-                <option value="all">Alle sterren</option>
-                <option value="5">⭐⭐⭐⭐⭐ (5 sterren)</option>
-                <option value="4+">⭐⭐⭐⭐+ (4 of 5)</option>
-                <option value="3+">⭐⭐⭐+ (3, 4 of 5)</option>
-                <option value="2">⭐⭐ (2 sterren)</option>
-                <option value="1">⭐ (1 ster)</option>
-              </select>
+            <div class="input-group full-width-group">
+              <label>Aantal sterren (meerdere selecteerbaar)</label>
+              <div class="filter-chip-group filter-stars-group" id="filter-rating-chips">
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="1" checked>
+                  <span class="chip-label">⭐ 1</span>
+                </label>
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="2" checked>
+                  <span class="chip-label">⭐⭐ 2</span>
+                </label>
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="3" checked>
+                  <span class="chip-label">⭐⭐⭐ 3</span>
+                </label>
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="4" checked>
+                  <span class="chip-label">⭐⭐⭐⭐ 4</span>
+                </label>
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="5" checked>
+                  <span class="chip-label">⭐⭐⭐⭐⭐ 5</span>
+                </label>
+              </div>
             </div>
             <div class="input-group">
               <label for="autoplay-input">Auto-play (tot les einde)</label>
@@ -445,25 +467,47 @@
 
           <!-- Quick Filter Toolbar for Database Tree -->
           <div class="db-filter-toolbar">
-            <div class="db-filter-item">
-              <label for="tree-filter-difficulty">Niveau:</label>
-              <select id="tree-filter-difficulty" class="filter-select-mini">
-                <option value="all">Alle niveaus</option>
-                <option value="beginner">Beginner</option>
-                <option value="intermediate">Gemiddeld</option>
-                <option value="advanced">Gevorderd</option>
-              </select>
+            <div class="db-filter-item-group">
+              <span class="db-filter-label">Niveau:</span>
+              <div class="filter-chip-group filter-chip-mini" id="tree-filter-difficulty-chips">
+                <label class="filter-chip chip-beginner">
+                  <input type="checkbox" value="beginner" checked>
+                  <span class="chip-label">🟢 Beg</span>
+                </label>
+                <label class="filter-chip chip-intermediate">
+                  <input type="checkbox" value="intermediate" checked>
+                  <span class="chip-label">🟡 Gem</span>
+                </label>
+                <label class="filter-chip chip-advanced">
+                  <input type="checkbox" value="advanced" checked>
+                  <span class="chip-label">🔴 Gev</span>
+                </label>
+              </div>
             </div>
-            <div class="db-filter-item">
-              <label for="tree-filter-rating">Sterren:</label>
-              <select id="tree-filter-rating" class="filter-select-mini">
-                <option value="all">Alle sterren</option>
-                <option value="5">⭐⭐⭐⭐⭐ (5)</option>
-                <option value="4+">⭐⭐⭐⭐+ (4+)</option>
-                <option value="3+">⭐⭐⭐+ (3+)</option>
-                <option value="2">⭐⭐ (2)</option>
-                <option value="1">⭐ (1)</option>
-              </select>
+            <div class="db-filter-item-group">
+              <span class="db-filter-label">Sterren:</span>
+              <div class="filter-chip-group filter-chip-mini filter-stars-group" id="tree-filter-rating-chips">
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="1" checked>
+                  <span class="chip-label">⭐1</span>
+                </label>
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="2" checked>
+                  <span class="chip-label">⭐2</span>
+                </label>
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="3" checked>
+                  <span class="chip-label">⭐3</span>
+                </label>
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="4" checked>
+                  <span class="chip-label">⭐4</span>
+                </label>
+                <label class="filter-chip chip-star">
+                  <input type="checkbox" value="5" checked>
+                  <span class="chip-label">⭐5</span>
+                </label>
+              </div>
             </div>
             <div class="db-filter-item db-filter-toggle">
               <label for="tree-filter-shorts">Shorts:</label>

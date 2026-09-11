@@ -175,8 +175,10 @@ class WorkoutApp {
     this.noRepeatMaterials = true; // Exhaust pool of materials before repeating (default true)
     this.requireVideo = true;      // Require exercises to have video
     this.requireShorts = true;     // Alleen Shorts video's (9:16) - standaard AAN
-    this.filterDifficulty = 'all'; // 'all', 'beginner', 'intermediate', 'advanced'
-    this.filterRating = 'all';     // 'all', '5', '4+', '3+', '2', '1'
+    this.filterDifficulties = new Set(['beginner', 'intermediate', 'advanced']); // Multi-select difficulty Set
+    this.filterRatings = new Set([1, 2, 3, 4, 5]);                               // Multi-select star ratings Set
+    this.filterDifficulty = 'all'; // Legacy getter/setter fallback
+    this.filterRating = 'all';     // Legacy getter/setter fallback
     this.usedExerciseIds = new Set(); // Track used exercises in current cycle
     this.usedMaterials = new Set();   // Track used materials in current cycle
     this.usedHistory = [];            // Chronological array of used exercises in current cycle
@@ -333,10 +335,10 @@ class WorkoutApp {
       coachSelect: document.getElementById('coach-select'),
       requireVideoInput: document.getElementById('require-video-input'),
       requireShortsInput: document.getElementById('require-shorts-input'),
-      filterDifficultySelect: document.getElementById('filter-difficulty-select'),
-      filterRatingSelect: document.getElementById('filter-rating-select'),
-      treeFilterDifficulty: document.getElementById('tree-filter-difficulty'),
-      treeFilterRating: document.getElementById('tree-filter-rating'),
+      filterDifficultyChips: document.getElementById('filter-difficulty-chips'),
+      filterRatingChips: document.getElementById('filter-rating-chips'),
+      treeFilterDifficultyChips: document.getElementById('tree-filter-difficulty-chips'),
+      treeFilterRatingChips: document.getElementById('tree-filter-rating-chips'),
       treeFilterShorts: document.getElementById('tree-filter-shorts'),
       treeFilterStatus: document.getElementById('tree-filter-status'),
       noRepeatExercisesInput: document.getElementById('no-repeat-exercises-input'),
@@ -522,34 +524,68 @@ class WorkoutApp {
     this.elements.searchBar.addEventListener('input', (e) => this.filterAdminTree(e.target.value));
 
     // Filter controls: Difficulty, Star Rating & Shorts Toggle
-    const handleDifficultyChange = (val) => {
-      this.filterDifficulty = val;
-      if (this.elements.filterDifficultySelect) this.elements.filterDifficultySelect.value = val;
-      if (this.elements.treeFilterDifficulty) this.elements.treeFilterDifficulty.value = val;
-      this._setCookie('workout_filter_difficulty', this.filterDifficulty);
+    const syncDifficultyCheckboxes = (diffSet) => {
+      const allDiffBoxes = document.querySelectorAll('#filter-difficulty-chips input, #tree-filter-difficulty-chips input');
+      allDiffBoxes.forEach(cb => {
+        cb.checked = diffSet.has(cb.value);
+      });
+    };
+
+    const handleDifficultyToggle = (e) => {
+      const parentGroup = e.target.closest('.filter-chip-group');
+      if (!parentGroup) return;
+      const checkedBoxes = Array.from(parentGroup.querySelectorAll('input:checked'));
+      const activeValues = new Set(checkedBoxes.map(cb => cb.value));
+
+      if (activeValues.size === 0) {
+        // If all unchecked, reset to all checked
+        this.filterDifficulties = new Set(['beginner', 'intermediate', 'advanced']);
+      } else {
+        this.filterDifficulties = activeValues;
+      }
+      syncDifficultyCheckboxes(this.filterDifficulties);
+      this._setCookie('workout_filter_difficulties', JSON.stringify(Array.from(this.filterDifficulties)));
       this.buildAdminTree();
       this.updateReelsPool();
     };
-    if (this.elements.filterDifficultySelect) {
-      this.elements.filterDifficultySelect.addEventListener('change', (e) => handleDifficultyChange(e.target.value));
+
+    if (this.elements.filterDifficultyChips) {
+      this.elements.filterDifficultyChips.addEventListener('change', handleDifficultyToggle);
     }
-    if (this.elements.treeFilterDifficulty) {
-      this.elements.treeFilterDifficulty.addEventListener('change', (e) => handleDifficultyChange(e.target.value));
+    if (this.elements.treeFilterDifficultyChips) {
+      this.elements.treeFilterDifficultyChips.addEventListener('change', handleDifficultyToggle);
     }
 
-    const handleRatingChange = (val) => {
-      this.filterRating = val;
-      if (this.elements.filterRatingSelect) this.elements.filterRatingSelect.value = val;
-      if (this.elements.treeFilterRating) this.elements.treeFilterRating.value = val;
-      this._setCookie('workout_filter_rating', this.filterRating);
+    const syncRatingCheckboxes = (ratingSet) => {
+      const allStarBoxes = document.querySelectorAll('#filter-rating-chips input, #tree-filter-rating-chips input');
+      allStarBoxes.forEach(cb => {
+        cb.checked = ratingSet.has(Number(cb.value));
+      });
+    };
+
+    const handleRatingToggle = (e) => {
+      const parentGroup = e.target.closest('.filter-chip-group');
+      if (!parentGroup) return;
+      const checkedBoxes = Array.from(parentGroup.querySelectorAll('input:checked'));
+      const activeValues = new Set(checkedBoxes.map(cb => Number(cb.value)));
+
+      if (activeValues.size === 0) {
+        // If all unchecked, reset to all checked
+        this.filterRatings = new Set([1, 2, 3, 4, 5]);
+      } else {
+        this.filterRatings = activeValues;
+      }
+      syncRatingCheckboxes(this.filterRatings);
+      this._setCookie('workout_filter_ratings', JSON.stringify(Array.from(this.filterRatings)));
       this.buildAdminTree();
       this.updateReelsPool();
     };
-    if (this.elements.filterRatingSelect) {
-      this.elements.filterRatingSelect.addEventListener('change', (e) => handleRatingChange(e.target.value));
+
+    if (this.elements.filterRatingChips) {
+      this.elements.filterRatingChips.addEventListener('change', handleRatingToggle);
     }
-    if (this.elements.treeFilterRating) {
-      this.elements.treeFilterRating.addEventListener('change', (e) => handleRatingChange(e.target.value));
+    if (this.elements.treeFilterRatingChips) {
+      this.elements.treeFilterRatingChips.addEventListener('change', handleRatingToggle);
     }
 
     const handleShortsChange = (checked) => {
@@ -974,8 +1010,51 @@ class WorkoutApp {
     this.coach = this._getCookie('workout_coach') || 'tabataman';
     this.requireVideo = this._getCookie('workout_require_video') !== 'false';
     this.requireShorts = this._getCookie('workout_require_shorts') !== 'false';
-    this.filterDifficulty = this._getCookie('workout_filter_difficulty') || 'all';
-    this.filterRating = this._getCookie('workout_filter_rating') || 'all';
+
+    // Difficulty filter (multi-select Set)
+    const savedDiffs = this._getCookie('workout_filter_difficulties');
+    if (savedDiffs) {
+      try {
+        const parsed = JSON.parse(savedDiffs);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.filterDifficulties = new Set(parsed);
+        } else {
+          this.filterDifficulties = new Set(['beginner', 'intermediate', 'advanced']);
+        }
+      } catch (e) {
+        this.filterDifficulties = new Set(['beginner', 'intermediate', 'advanced']);
+      }
+    } else {
+      const oldDiff = this._getCookie('workout_filter_difficulty');
+      if (oldDiff && oldDiff !== 'all') {
+        this.filterDifficulties = new Set([oldDiff]);
+      } else {
+        this.filterDifficulties = new Set(['beginner', 'intermediate', 'advanced']);
+      }
+    }
+
+    // Rating filter (multi-select Set)
+    const savedRatings = this._getCookie('workout_filter_ratings');
+    if (savedRatings) {
+      try {
+        const parsed = JSON.parse(savedRatings);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          this.filterRatings = new Set(parsed.map(Number));
+        } else {
+          this.filterRatings = new Set([1, 2, 3, 4, 5]);
+        }
+      } catch (e) {
+        this.filterRatings = new Set([1, 2, 3, 4, 5]);
+      }
+    } else {
+      const oldRating = this._getCookie('workout_filter_rating');
+      if (oldRating === '5') this.filterRatings = new Set([5]);
+      else if (oldRating === '4+') this.filterRatings = new Set([4, 5]);
+      else if (oldRating === '3+') this.filterRatings = new Set([3, 4, 5]);
+      else if (oldRating === '2') this.filterRatings = new Set([2]);
+      else if (oldRating === '1') this.filterRatings = new Set([1]);
+      else this.filterRatings = new Set([1, 2, 3, 4, 5]);
+    }
     this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
     this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
     this.teamCount = parseInt(this._getCookie('workout_team_count')) || 1;
@@ -1035,18 +1114,17 @@ class WorkoutApp {
     if (this.elements.treeFilterShorts) {
       this.elements.treeFilterShorts.checked = this.requireShorts;
     }
-    if (this.elements.filterDifficultySelect) {
-      this.elements.filterDifficultySelect.value = this.filterDifficulty;
-    }
-    if (this.elements.treeFilterDifficulty) {
-      this.elements.treeFilterDifficulty.value = this.filterDifficulty;
-    }
-    if (this.elements.filterRatingSelect) {
-      this.elements.filterRatingSelect.value = this.filterRating;
-    }
-    if (this.elements.treeFilterRating) {
-      this.elements.treeFilterRating.value = this.filterRating;
-    }
+
+    // Set filter checkboxes
+    const allDiffBoxes = document.querySelectorAll('#filter-difficulty-chips input, #tree-filter-difficulty-chips input');
+    allDiffBoxes.forEach(cb => {
+      cb.checked = this.filterDifficulties.has(cb.value);
+    });
+
+    const allRatingBoxes = document.querySelectorAll('#filter-rating-chips input, #tree-filter-rating-chips input');
+    allRatingBoxes.forEach(cb => {
+      cb.checked = this.filterRatings.has(Number(cb.value));
+    });
     this._updateShortsClass();
 
     if (this.elements.noRepeatExercisesInput) {
@@ -1150,8 +1228,14 @@ class WorkoutApp {
     let coach = this.elements.coachSelect ? this.elements.coachSelect.value : 'tabataman';
     let requireVideo = this.elements.requireVideoInput ? this.elements.requireVideoInput.checked : this.requireVideo;
     let requireShorts = this.elements.requireShortsInput ? this.elements.requireShortsInput.checked : this.requireShorts;
-    let filterDifficulty = this.elements.filterDifficultySelect ? this.elements.filterDifficultySelect.value : this.filterDifficulty;
-    let filterRating = this.elements.filterRatingSelect ? this.elements.filterRatingSelect.value : this.filterRating;
+    
+    // Multi-select difficulty & rating from checkboxes
+    const checkedDiffs = Array.from(document.querySelectorAll('#filter-difficulty-chips input:checked')).map(cb => cb.value);
+    this.filterDifficulties = checkedDiffs.length > 0 ? new Set(checkedDiffs) : new Set(['beginner', 'intermediate', 'advanced']);
+
+    const checkedRatings = Array.from(document.querySelectorAll('#filter-rating-chips input:checked')).map(cb => Number(cb.value));
+    this.filterRatings = checkedRatings.length > 0 ? new Set(checkedRatings) : new Set([1, 2, 3, 4, 5]);
+
     let noRepeatExercises = this.elements.noRepeatExercisesInput ? this.elements.noRepeatExercisesInput.checked : true;
     let noRepeatMaterials = this.elements.noRepeatMaterialsInput ? this.elements.noRepeatMaterialsInput.checked : true;
     let teamCount = parseInt(this.elements.teamCountInput ? this.elements.teamCountInput.value : '1') || 1;
@@ -1173,8 +1257,6 @@ class WorkoutApp {
     this.coach = coach;
     this.requireVideo = requireVideo;
     this.requireShorts = requireShorts;
-    this.filterDifficulty = filterDifficulty;
-    this.filterRating = filterRating;
     this.noRepeatExercises = noRepeatExercises;
     this.noRepeatMaterials = noRepeatMaterials;
     this.circuitRotation = circuitRotation;
@@ -1197,8 +1279,6 @@ class WorkoutApp {
     this.classEndTime = classEnd;
     this.requireVideo = requireVideo;
     this.requireShorts = requireShorts;
-    this.filterDifficulty = filterDifficulty;
-    this.filterRating = filterRating;
     this.noRepeatExercises = noRepeatExercises;
     this.noRepeatMaterials = noRepeatMaterials;
     this.circuitRotation = circuitRotation;
@@ -1210,8 +1290,8 @@ class WorkoutApp {
     this._setCookie('workout_class_end', this.classEndTime);
     this._setCookie('workout_require_video', this.requireVideo);
     this._setCookie('workout_require_shorts', this.requireShorts);
-    this._setCookie('workout_filter_difficulty', this.filterDifficulty);
-    this._setCookie('workout_filter_rating', this.filterRating);
+    this._setCookie('workout_filter_difficulties', JSON.stringify(Array.from(this.filterDifficulties)));
+    this._setCookie('workout_filter_ratings', JSON.stringify(Array.from(this.filterRatings)));
     this._setCookie('workout_no_repeat_exercises', this.noRepeatExercises);
     this._setCookie('workout_no_repeat_materials', this.noRepeatMaterials);
     this._setCookie('workout_circuit_rotation', this.circuitRotation);
@@ -1404,24 +1484,32 @@ class WorkoutApp {
       return false;
     }
 
-    // 4. Difficulty filter check
-    const diff = options.filterDifficulty || this.filterDifficulty;
-    if (diff && diff !== 'all') {
-      const exDiff = (ex.difficulty || '').toLowerCase();
-      if (exDiff !== diff.toLowerCase()) {
+    // 4. Difficulty filter check (multi-select)
+    const diffs = options.filterDifficulties || this.filterDifficulties;
+    if (diffs && diffs.size > 0 && diffs.size < 3) {
+      const exDiff = (ex.difficulty || 'intermediate').toLowerCase();
+      if (!diffs.has(exDiff)) {
         return false;
       }
+    } else if (options.filterDifficulty && options.filterDifficulty !== 'all') {
+      const exDiff = (ex.difficulty || '').toLowerCase();
+      if (exDiff !== options.filterDifficulty.toLowerCase()) return false;
     }
 
-    // 5. Star rating filter check
-    const ratingFilter = options.filterRating || this.filterRating;
-    if (ratingFilter && ratingFilter !== 'all') {
+    // 5. Star rating filter check (multi-select)
+    const ratings = options.filterRatings || this.filterRatings;
+    if (ratings && ratings.size > 0 && ratings.size < 5) {
       const exRating = Number(ex.rating) || 0;
-      if (ratingFilter.endsWith('+')) {
-        const minRating = parseInt(ratingFilter, 10);
+      if (!ratings.has(exRating)) {
+        return false;
+      }
+    } else if (options.filterRating && options.filterRating !== 'all') {
+      const exRating = Number(ex.rating) || 0;
+      if (options.filterRating.endsWith('+')) {
+        const minRating = parseInt(options.filterRating, 10);
         if (exRating < minRating) return false;
       } else {
-        const targetRating = parseInt(ratingFilter, 10);
+        const targetRating = parseInt(options.filterRating, 10);
         if (exRating !== targetRating) return false;
       }
     }
