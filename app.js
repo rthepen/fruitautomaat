@@ -2191,7 +2191,8 @@ class WorkoutApp {
 
   /**
    * Optimal Station Assignment Engine
-   * Assigns strictly unique materials and exercises to each team.
+   * Assigns STRICTLY UNIQUE materials and STRICTLY UNIQUE exercises to each team/station.
+   * Maximizes muscle group and movement category diversity across all stations in the round.
    * Eliminates repeat bias across teams and ensures fair, balanced rotation.
    */
   _assignOptimalTeamStations(teamCount, trackerData, activeMaterials, activeExercisesMap) {
@@ -2200,136 +2201,193 @@ class WorkoutApp {
     const td = trackerData.teamData || trackerData;
     const gc = trackerData.globalMaterialCounts || this.globalMaterialCounts || {};
 
-    let chosenMaterials = [];
+    // 1. Build rich working pool of materials & exercises
+    let poolMaterials = [...activeMaterials];
+    const exercisesMap = {};
+    for (const m of poolMaterials) {
+      exercisesMap[m] = [...(activeExercisesMap[m] || [])];
+    }
 
-    if (activeMaterials.length < T) {
-      // Edge-case: fewer materials enabled than teams -> allow shared materials with minimal duplication
-      const roundCounts = {};
-      for (let t = 0; t < T; t++) {
-        const teamInfo = td[t] || { materialCounts: {} };
-        const sorted = [...activeMaterials].sort((a, b) => {
-          const costA = (teamInfo.materialCounts[a] || 0) * 10000 + (roundCounts[a] || 0) * 1000 + (gc[a] || 0) * 100 + Math.random() * 5;
-          const costB = (teamInfo.materialCounts[b] || 0) * 10000 + (roundCounts[b] || 0) * 1000 + (gc[b] || 0) * 100 + Math.random() * 5;
-          return costA - costB;
-        });
-        const picked = sorted[0];
-        roundCounts[picked] = (roundCounts[picked] || 0) + 1;
-        chosenMaterials.push(picked);
+    // If active materials < T, look for additional materials in the database with working exercises
+    if (poolMaterials.length < T) {
+      for (const mat in this.database) {
+        if (!poolMaterials.includes(mat)) {
+          const exs = this.database[mat].filter(ex => {
+            if (this.disabledExerciseIds.has(ex.id)) return false;
+            if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
+            return true;
+          });
+          if (exs.length > 0) {
+            poolMaterials.push(mat);
+            exercisesMap[mat] = exs;
+            if (poolMaterials.length >= T) break;
+          }
+        }
       }
-    } else {
-      // Standard case: active materials >= teams -> find optimal distinct assignment without exponential freeze
-      const teamOptions = [];
-      for (let t = 0; t < T; t++) {
-        const teamInfo = td[t] || { materialCounts: {}, usedExerciseIds: new Set() };
-        const opts = activeMaterials.map(m => {
-          const teamCnt = (teamInfo.materialCounts && teamInfo.materialCounts[m]) || 0;
-          const globCnt = gc[m] || 0;
-          const exs = activeExercisesMap[m] || [];
-          const hasUnused = exs.some(e => !teamInfo.usedExerciseIds || !teamInfo.usedExerciseIds.has(e.id));
-          return {
-            material: m,
-            cost: teamCnt * 10000 + globCnt * 100 + (hasUnused ? 0 : 500) + Math.random() * 5
-          };
-        });
-        opts.sort((a, b) => a.cost - b.cost);
-        teamOptions.push(opts);
+    }
+
+    // 2. Track assigned items in this round
+    const roundAssigned = {
+      exerciseIds: new Set(),
+      exerciseNames: new Set(),
+      materials: new Set(),
+      muscleFreq: {},
+      categoryFreq: {}
+    };
+
+    // Helper: score a candidate exercise for a specific team station
+    const getCandidateScore = (ex, mat, teamIdx) => {
+      // Hard constraint 1: Absolutely NO duplicate exercises in the same round
+      if (roundAssigned.exerciseIds.has(ex.id)) return Infinity;
+      if (ex.exercise_name && roundAssigned.exerciseNames.has(ex.exercise_name.trim().toLowerCase())) return Infinity;
+
+      let score = 0;
+
+      // Material uniqueness in this round
+      if (roundAssigned.materials.has(mat)) {
+        score += 20000; // Strong penalty if another team in this round already uses this material
       }
 
-      // Priority-based greedy assignment: teams with steepest cost difference between 1st & 2nd choice choose first
-      const chosen = new Array(T).fill(null);
-      const assignedMaterials = new Set();
+      // Team history penalties (avoid team doing what it did recently)
+      const teamInfo = td[teamIdx] || { materialCounts: {}, usedExerciseIds: new Set(), exerciseCounts: {} };
+      const teamMatCount = (teamInfo.materialCounts && teamInfo.materialCounts[mat]) || 0;
+      const teamExCount = (teamInfo.exerciseCounts && teamInfo.exerciseCounts[ex.id]) || 0;
+      const isUsedByTeam = teamInfo.usedExerciseIds && teamInfo.usedExerciseIds.has(ex.id);
+      const globMatCount = gc[mat] || 0;
 
-      const teamOrder = [];
-      for (let t = 0; t < T; t++) {
-        const opts = teamOptions[t];
-        const diff = (opts.length > 1) ? (opts[1].cost - opts[0].cost) : 1000;
-        teamOrder.push({ t, bestCost: opts[0].cost, diff });
+      score += teamMatCount * 2500;
+      score += teamExCount * 5000;
+      score += (isUsedByTeam ? 1200 : 0);
+      score += globMatCount * 80;
+
+      // Muscle group diversity: Reward targeting new muscle groups not yet targeted in this round
+      const exMuscles = Array.isArray(ex.target_muscles) ? ex.target_muscles : [];
+      let newMusclesCount = 0;
+      let dupMusclesCount = 0;
+
+      for (const m of exMuscles) {
+        const freq = roundAssigned.muscleFreq[m] || 0;
+        if (freq === 0) {
+          newMusclesCount++;
+        } else {
+          dupMusclesCount += freq;
+        }
       }
-      teamOrder.sort((a, b) => b.diff - a.diff || b.bestCost - a.bestCost);
 
-      for (const { t } of teamOrder) {
-        const opts = teamOptions[t];
-        for (const opt of opts) {
-          if (!assignedMaterials.has(opt.material)) {
-            chosen[t] = opt.material;
-            assignedMaterials.add(opt.material);
-            break;
+      score -= (newMusclesCount * 400); // Big bonus for introducing fresh muscles
+      score += (dupMusclesCount * 200); // Penalty for repeating muscles
+
+      // Category diversity: Reward introducing fresh movement categories
+      const cat = (typeof ex.category === 'object' ? (ex.category.nl || ex.category.en) : ex.category) || '';
+      if (cat) {
+        const catFreq = roundAssigned.categoryFreq[cat] || 0;
+        if (catFreq === 0) {
+          score -= 500; // Fresh category bonus
+        } else {
+          score += catFreq * 250;
+        }
+      }
+
+      // Small random jitter
+      score += Math.random() * 5;
+
+      return score;
+    };
+
+    const chosenStations = new Array(T).fill(null);
+
+    // Order team assignment by how constrained the team is
+    const teamOrder = Array.from({ length: T }, (_, i) => i);
+    teamOrder.sort((a, b) => {
+      const tdA = td[a] || { usedExerciseIds: new Set() };
+      const tdB = td[b] || { usedExerciseIds: new Set() };
+      return (tdB.usedExerciseIds.size - tdA.usedExerciseIds.size);
+    });
+
+    for (const t of teamOrder) {
+      let bestCandidate = null;
+      let bestScore = Infinity;
+
+      // Pass 1: Try materials not yet used in this round
+      const unusedMaterials = poolMaterials.filter(m => !roundAssigned.materials.has(m));
+      const primaryMats = (unusedMaterials.length > 0) ? unusedMaterials : poolMaterials;
+
+      for (const mat of primaryMats) {
+        const exs = exercisesMap[mat] || [];
+        for (const ex of exs) {
+          const score = getCandidateScore(ex, mat, t);
+          if (score < bestScore) {
+            bestScore = score;
+            bestCandidate = { material: mat, exercise: ex };
           }
         }
       }
 
-      // Fallback in case any slot wasn't filled
-      for (let t = 0; t < T; t++) {
-        if (!chosen[t]) {
-          const unassigned = activeMaterials.find(m => !assignedMaterials.has(m));
-          if (unassigned) {
-            chosen[t] = unassigned;
-            assignedMaterials.add(unassigned);
-          } else {
-            chosen[t] = activeMaterials[t % activeMaterials.length];
-          }
-        }
-      }
-
-      // Local 2-opt swap pass to minimize overall assignment cost
-      let improved = true;
-      let pass = 0;
-      while (improved && pass < 5) {
-        improved = false;
-        pass++;
-        for (let i = 0; i < T; i++) {
-          for (let j = i + 1; j < T; j++) {
-            const matI = chosen[i];
-            const matJ = chosen[j];
-            if (!matI || !matJ) continue;
-            const costCurrent = (teamOptions[i].find(o => o.material === matI)?.cost || 0) +
-                                (teamOptions[j].find(o => o.material === matJ)?.cost || 0);
-            const costSwapped = (teamOptions[i].find(o => o.material === matJ)?.cost || 0) +
-                                (teamOptions[j].find(o => o.material === matI)?.cost || 0);
-            if (costSwapped < costCurrent - 1e-4) {
-              chosen[i] = matJ;
-              chosen[j] = matI;
-              improved = true;
+      // Pass 2: If no candidate found in unused materials, scan ALL pool materials for any unassigned exercise
+      if (!bestCandidate || bestScore === Infinity) {
+        for (const mat of poolMaterials) {
+          const exs = exercisesMap[mat] || [];
+          for (const ex of exs) {
+            const score = getCandidateScore(ex, mat, t);
+            if (score < bestScore) {
+              bestScore = score;
+              bestCandidate = { material: mat, exercise: ex };
             }
           }
         }
       }
 
-      chosenMaterials = chosen;
-    }
+      // Pass 3: Fallback to any distinct exercise from the entire database not yet in this round
+      if (!bestCandidate || bestScore === Infinity) {
+        for (const mat in this.database) {
+          const exs = this.database[mat] || [];
+          for (const ex of exs) {
+            if (this.disabledExerciseIds.has(ex.id)) continue;
+            if (roundAssigned.exerciseIds.has(ex.id)) continue;
+            if (ex.exercise_name && roundAssigned.exerciseNames.has(ex.exercise_name.trim().toLowerCase())) continue;
 
-    // Now select a unique or least-used exercise for each team's chosen material
-    return chosenMaterials.map((mat, idx) => {
-      const teamInfo = td[idx] || { usedExerciseIds: new Set(), exerciseCounts: {} };
-      const exs = activeExercisesMap[mat] || [];
-
-      let eligible = exs.filter(e => !teamInfo.usedExerciseIds || !teamInfo.usedExerciseIds.has(e.id));
-      if (eligible.length === 0) {
-        let minCount = Infinity;
-        for (const e of exs) {
-          const cnt = (teamInfo.exerciseCounts && teamInfo.exerciseCounts[e.id]) || 0;
-          if (cnt < minCount) minCount = cnt;
-        }
-        eligible = exs.filter(e => ((teamInfo.exerciseCounts && teamInfo.exerciseCounts[e.id]) || 0) === minCount);
-      }
-      if (eligible.length === 0) eligible = exs;
-
-      let chosenEx = (eligible && eligible.length > 0) ? eligible[Math.floor(Math.random() * eligible.length)] : null;
-      if (!chosenEx) {
-        for (const m in activeExercisesMap) {
-          if (activeExercisesMap[m] && activeExercisesMap[m].length > 0) {
-            chosenEx = activeExercisesMap[m][0];
-            mat = m;
-            break;
+            const score = getCandidateScore(ex, mat, t);
+            if (score < bestScore) {
+              bestScore = score;
+              bestCandidate = { material: mat, exercise: ex };
+            }
           }
         }
       }
-      return {
-        stationIndex: idx,
-        material: mat,
-        exercise: chosenEx
+
+      // Ultimate emergency fallback if total available exercises is strictly less than T
+      if (!bestCandidate) {
+        const fallbackMat = poolMaterials[t % poolMaterials.length] || Object.keys(this.database)[0];
+        const fallbackExs = exercisesMap[fallbackMat] || this.database[fallbackMat] || [];
+        bestCandidate = {
+          material: fallbackMat,
+          exercise: fallbackExs[0] || { id: `fallback_${t}`, exercise_name: 'Oefening' }
+        };
+      }
+
+      chosenStations[t] = {
+        stationIndex: t,
+        material: bestCandidate.material,
+        exercise: bestCandidate.exercise
       };
-    });
+
+      roundAssigned.exerciseIds.add(bestCandidate.exercise.id);
+      if (bestCandidate.exercise.exercise_name) {
+        roundAssigned.exerciseNames.add(bestCandidate.exercise.exercise_name.trim().toLowerCase());
+      }
+      roundAssigned.materials.add(bestCandidate.material);
+
+      const exMuscles = Array.isArray(bestCandidate.exercise.target_muscles) ? bestCandidate.exercise.target_muscles : [];
+      for (const m of exMuscles) {
+        roundAssigned.muscleFreq[m] = (roundAssigned.muscleFreq[m] || 0) + 1;
+      }
+      const cat = (typeof bestCandidate.exercise.category === 'object' ? (bestCandidate.exercise.category.nl || bestCandidate.exercise.category.en) : bestCandidate.exercise.category) || '';
+      if (cat) {
+        roundAssigned.categoryFreq[cat] = (roundAssigned.categoryFreq[cat] || 0) + 1;
+      }
+    }
+
+    return chosenStations;
   }
 
   /**
@@ -2340,11 +2398,7 @@ class WorkoutApp {
     const activeExercisesMap = {};
 
     for (const mat in this.database) {
-      const exs = this.database[mat].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
-        return true;
-      });
+      const exs = this.database[mat].filter(ex => this._isExerciseEligible(ex));
       if (exs.length > 0) {
         activeMaterials.push(mat);
         activeExercisesMap[mat] = exs;
@@ -3001,28 +3055,38 @@ class WorkoutApp {
     const currentStation = item.stations[stationIndex];
     const currentExId = currentStation.exercise ? currentStation.exercise.id : null;
 
-    // Collect materials used by other teams in this round (normalized lowercase)
+    // Collect materials, exercise IDs, and targeted muscles used by other teams in this round
     const otherMaterials = new Set();
+    const otherExerciseIds = new Set();
+    const otherExerciseNames = new Set();
+    const otherMuscles = new Set();
+
     item.stations.forEach((st, idx) => {
-      if (idx !== stationIndex && st.material) {
-        otherMaterials.add(st.material.trim().toLowerCase());
+      if (idx !== stationIndex) {
+        if (st.material) otherMaterials.add(st.material.trim().toLowerCase());
+        if (st.exercise) {
+          otherExerciseIds.add(st.exercise.id);
+          if (st.exercise.exercise_name) otherExerciseNames.add(st.exercise.exercise_name.trim().toLowerCase());
+          if (Array.isArray(st.exercise.target_muscles)) {
+            st.exercise.target_muscles.forEach(m => otherMuscles.add(m));
+          }
+        }
       }
     });
 
-    // Find all valid candidate exercises whose material is NOT used by any other station
-    const candidates = [];
+    // Find all valid candidate exercises whose material AND exercise are NOT used by any other station in this round
+    let candidates = [];
     for (const mat in this.database) {
       if (otherMaterials.has(mat.trim().toLowerCase())) {
-        continue; // Strictly forbidden: used by another team in this round!
+        continue; // Strictly forbidden: material used by another team in this round!
       }
 
-      const exs = this.database[mat].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
-        return true;
-      });
+      const exs = this.database[mat].filter(ex => this._isExerciseEligible(ex));
 
       for (const ex of exs) {
+        if (otherExerciseIds.has(ex.id)) continue;
+        if (ex.exercise_name && otherExerciseNames.has(ex.exercise_name.trim().toLowerCase())) continue;
+
         candidates.push({
           material: mat,
           exercise: ex
@@ -3030,16 +3094,28 @@ class WorkoutApp {
       }
     }
 
+    // If no candidate found without shared material (e.g. fewer materials than stations), allow distinct exercises from available materials
     if (candidates.length === 0) {
-      alert("Geen alternatieve oefening beschikbaar die aan de materiaal-voorwaarden voldoet.");
+      for (const mat in this.database) {
+        const exs = this.database[mat].filter(ex => this._isExerciseEligible(ex));
+        for (const ex of exs) {
+          if (otherExerciseIds.has(ex.id)) continue;
+          if (ex.exercise_name && otherExerciseNames.has(ex.exercise_name.trim().toLowerCase())) continue;
+          candidates.push({ material: mat, exercise: ex });
+        }
+      }
+    }
+
+    if (candidates.length === 0) {
+      alert("Geen alternatieve unieke oefening beschikbaar die aan de voorwaarden voldoet.");
       return;
     }
 
-    // Filter out the current exercise if more than 1 candidate exists
+    // Filter out current exercise if alternative candidates exist
     let eligible = candidates.filter(c => c.exercise.id !== currentExId);
     if (eligible.length === 0) eligible = candidates;
 
-    // Prioritize variety: count prior occurrences across all other rounds for this team
+    // Score candidates based on: 1) Introducing new muscle groups, 2) Team history variety
     const exCounts = {};
     const matCounts = {};
     this.plannedSchedule.forEach((schedItem, rIdx) => {
@@ -3053,42 +3129,47 @@ class WorkoutApp {
       }
     });
 
-    let minExCount = Infinity;
-    eligible.forEach(c => {
-      const cnt = exCounts[c.exercise.id] || 0;
-      if (cnt < minExCount) minExCount = cnt;
+    // Calculate score for each eligible candidate (lower is better)
+    const scored = eligible.map(c => {
+      let score = 0;
+      const exMuscles = Array.isArray(c.exercise.target_muscles) ? c.exercise.target_muscles : [];
+      let newMuscles = 0;
+      for (const m of exMuscles) {
+        if (!otherMuscles.has(m)) newMuscles++;
+      }
+      score -= (newMuscles * 500); // Big bonus for fresh muscle groups!
+      score += (exCounts[c.exercise.id] || 0) * 1000;
+      score += (matCounts[c.material] || 0) * 500;
+      score += Math.random() * 5;
+      return { candidate: c, score };
     });
-    const leastUsedExs = eligible.filter(c => (exCounts[c.exercise.id] || 0) === minExCount);
 
-    let minMatCount = Infinity;
-    leastUsedExs.forEach(c => {
-      const cnt = matCounts[c.material] || 0;
-      if (cnt < minMatCount) minMatCount = cnt;
-    });
-    const bestPool = leastUsedExs.filter(c => (matCounts[c.material] || 0) === minMatCount);
-
-    const chosen = bestPool[Math.floor(Math.random() * bestPool.length)] || eligible[0];
+    scored.sort((a, b) => a.score - b.score);
+    const chosen = scored[0].candidate;
 
     this.setStationExercise(roundIndex, stationIndex, chosen.exercise, chosen.material);
   }
 
   /**
-   * Set a specific exercise for a station, verifying unique material constraint
+   * Set a specific exercise for a station, verifying unique material and exercise constraints
    */
   setStationExercise(roundIndex, stationIndex, chosenExercise, chosenMaterial) {
     if (!this.plannedSchedule || !this.plannedSchedule[roundIndex]) return;
     const item = this.plannedSchedule[roundIndex];
     if (!item.stations || !item.stations[stationIndex]) return;
 
-    // Verify material constraint
+    // Verify material and exercise constraints
     const otherMaterials = new Set();
+    const otherExerciseIds = new Set();
     item.stations.forEach((st, idx) => {
-      if (idx !== stationIndex && st.material) {
-        otherMaterials.add(st.material.trim().toLowerCase());
+      if (idx !== stationIndex) {
+        if (st.material) otherMaterials.add(st.material.trim().toLowerCase());
+        if (st.exercise) otherExerciseIds.add(st.exercise.id);
       }
     });
-    if (otherMaterials.has(chosenMaterial.trim().toLowerCase())) {
-      alert(`Het materiaal "${chosenMaterial}" wordt in deze ronde al door een ander team gebruikt!`);
+
+    if (otherExerciseIds.has(chosenExercise.id)) {
+      alert(`De oefening "${chosenExercise.exercise_name || chosenExercise.id}" wordt in deze ronde al door een ander team gebruikt!`);
       return;
     }
 
@@ -3149,7 +3230,7 @@ class WorkoutApp {
 
   /**
    * Opens an interactive exercise selector modal for a specific station,
-   * showing only exercises whose material is NOT used by any other team in that round.
+   * showing only exercises whose material and exercise are NOT used by any other team in that round.
    */
   openStationExercisePicker(roundIndex, stationIndex) {
     if (!this.plannedSchedule || !this.plannedSchedule[roundIndex]) return;
@@ -3161,10 +3242,17 @@ class WorkoutApp {
 
     const otherMaterials = new Set();
     const otherMaterialNames = [];
+    const otherExerciseIds = new Set();
+
     item.stations.forEach((st, idx) => {
-      if (idx !== stationIndex && st.material) {
-        otherMaterials.add(st.material.trim().toLowerCase());
-        otherMaterialNames.push(`T${idx + 1}: ${st.material}`);
+      if (idx !== stationIndex) {
+        if (st.material) {
+          otherMaterials.add(st.material.trim().toLowerCase());
+          otherMaterialNames.push(`T${idx + 1}: ${st.material}`);
+        }
+        if (st.exercise) {
+          otherExerciseIds.add(st.exercise.id);
+        }
       }
     });
 
@@ -3175,9 +3263,8 @@ class WorkoutApp {
       }
 
       const exs = this.database[mat].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
-        return true;
+        if (otherExerciseIds.has(ex.id)) return false;
+        return this._isExerciseEligible(ex);
       });
 
       if (exs.length > 0) {
