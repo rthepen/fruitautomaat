@@ -10,7 +10,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   
   <!-- CSS Stylesheet -->
-  <link rel="stylesheet" href="style.css?v=2.5.2">
+  <link rel="stylesheet" href="style.css?v=2.7.1">
 </head>
 <body>
 
@@ -162,13 +162,40 @@
 
       <!-- 3. MAXIMUM SCREENSPACE VIDEO ARENA (100% WIDTH & FULL REMAINING HEIGHT) -->
       <div class="video-arena-container" id="video-arena-container">
+        <!-- Ambient video glow backdrop (dynamic blur matching video thumbnail) -->
+        <div class="video-ambient-glow" id="video-ambient-glow"></div>
+
         <!-- Single-Team HUD Wrapper -->
         <div class="single-team-hud-wrapper" id="single-team-hud-wrapper">
-          <div class="single-video-header-overlay" id="single-video-header-overlay">
-            <h2 id="hud-exercise-name" class="hud-exercise-name">---</h2>
-            <div id="hud-material-info" class="hud-material-info">---</div>
+          <!-- Left side HUD panel (visible on widescreen in Shorts mode, fills left black space) -->
+          <div class="shorts-side-hud shorts-left-hud" id="shorts-left-hud">
+            <div class="shorts-hud-card">
+              <div class="shorts-station-badge" id="hud-station-badge">STATION 1</div>
+              <h2 id="hud-exercise-name" class="hud-exercise-name">---</h2>
+              <div class="shorts-meta-row">
+                <span id="hud-material-info" class="hud-material-info">---</span>
+                <span id="hud-difficulty-badge" class="hud-difficulty-badge">NIVEAU</span>
+                <span id="hud-rating-badge" class="hud-rating-badge">⭐⭐⭐⭐⭐</span>
+              </div>
+              <div class="shorts-section-title">DOEL SPIERGROEPEN</div>
+              <div class="shorts-muscles-tags" id="hud-muscles-tags">
+                <span class="muscle-tag">Lichaamsgewicht</span>
+              </div>
+              <div class="shorts-section-title">INSTRUCTIES &amp; FOCUS</div>
+              <p id="hud-instruction-text" class="hud-instruction-text">Maak je klaar voor de oefening.</p>
+              <div id="hud-form-cues-box" class="hud-form-cues-box" style="display:none;">
+                <div class="shorts-cues-title">💡 AANDACHTSPUNT</div>
+                <div id="hud-form-cues-text" class="hud-form-cues-text"></div>
+              </div>
+            </div>
           </div>
+
+          <!-- Center 9:16 Video Slot -->
           <div class="video-slot" id="video-slot">
+            <div class="single-video-header-overlay" id="single-video-header-overlay">
+              <h2 id="hud-exercise-name-mobile" class="hud-exercise-name">---</h2>
+              <div id="hud-material-info-mobile" class="hud-material-info">---</div>
+            </div>
             <iframe
               id="workout-video-iframe"
               src=""
@@ -179,6 +206,29 @@
               style="display:none;"
             ></iframe>
             <img id="video-fallback-img" class="video-fallback-img" src="" alt="" style="display:none;">
+          </div>
+
+          <!-- Right side HUD panel (visible on widescreen in Shorts mode, fills right black space) -->
+          <div class="shorts-side-hud shorts-right-hud" id="shorts-right-hud">
+            <div class="shorts-hud-card">
+              <div class="shorts-timer-highlight">
+                <div class="shorts-timer-circle-wrap">
+                  <svg class="shorts-timer-svg" viewBox="0 0 100 100">
+                    <circle class="shorts-timer-bg" cx="50" cy="50" r="44"></circle>
+                    <circle class="shorts-timer-bar-circle" id="shorts-timer-bar-circle" cx="50" cy="50" r="44"></circle>
+                  </svg>
+                  <div class="shorts-timer-center">
+                    <span id="shorts-timer-num" class="shorts-timer-num">--</span>
+                    <span class="shorts-timer-lbl">SEC</span>
+                  </div>
+                </div>
+              </div>
+              <div class="shorts-next-up-card" id="shorts-next-up-card">
+                <div class="shorts-next-up-header">⏭ HIERNA AAN DE BEURT</div>
+                <div class="shorts-next-up-name" id="shorts-next-up-name">Wordt berekend...</div>
+                <div class="shorts-next-up-mat" id="shorts-next-up-mat">---</div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -290,6 +340,33 @@
               </div>
             </div>
             <div class="input-group">
+              <label for="require-shorts-input">Alleen Shorts (9:16)</label>
+              <div class="toggle-row">
+                <input type="checkbox" id="require-shorts-input" class="toggle-checkbox" checked>
+                <label for="require-shorts-input" class="toggle-label"></label>
+              </div>
+            </div>
+            <div class="input-group">
+              <label for="filter-difficulty-select">Moeilijkheidsgraad</label>
+              <select id="filter-difficulty-select">
+                <option value="all">Alle niveaus</option>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Gemiddeld (Intermediate)</option>
+                <option value="advanced">Gevorderd (Advanced)</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label for="filter-rating-select">Aantal sterren</label>
+              <select id="filter-rating-select">
+                <option value="all">Alle sterren</option>
+                <option value="5">⭐⭐⭐⭐⭐ (5 sterren)</option>
+                <option value="4+">⭐⭐⭐⭐+ (4 of 5)</option>
+                <option value="3+">⭐⭐⭐+ (3, 4 of 5)</option>
+                <option value="2">⭐⭐ (2 sterren)</option>
+                <option value="1">⭐ (1 ster)</option>
+              </select>
+            </div>
+            <div class="input-group">
               <label for="autoplay-input">Auto-play (tot les einde)</label>
               <div class="toggle-row">
                 <input type="checkbox" id="autoplay-input" class="toggle-checkbox">
@@ -365,6 +442,38 @@
             <button id="select-all-btn" class="btn-small">Alles selecteren</button>
             <button id="deselect-all-btn" class="btn-small">Alles de-selecteren</button>
           </div>
+
+          <!-- Quick Filter Toolbar for Database Tree -->
+          <div class="db-filter-toolbar">
+            <div class="db-filter-item">
+              <label for="tree-filter-difficulty">Niveau:</label>
+              <select id="tree-filter-difficulty" class="filter-select-mini">
+                <option value="all">Alle niveaus</option>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Gemiddeld</option>
+                <option value="advanced">Gevorderd</option>
+              </select>
+            </div>
+            <div class="db-filter-item">
+              <label for="tree-filter-rating">Sterren:</label>
+              <select id="tree-filter-rating" class="filter-select-mini">
+                <option value="all">Alle sterren</option>
+                <option value="5">⭐⭐⭐⭐⭐ (5)</option>
+                <option value="4+">⭐⭐⭐⭐+ (4+)</option>
+                <option value="3+">⭐⭐⭐+ (3+)</option>
+                <option value="2">⭐⭐ (2)</option>
+                <option value="1">⭐ (1)</option>
+              </select>
+            </div>
+            <div class="db-filter-item db-filter-toggle">
+              <label for="tree-filter-shorts">Shorts:</label>
+              <div class="toggle-row" style="transform: scale(0.85); transform-origin: left center;">
+                <input type="checkbox" id="tree-filter-shorts" class="toggle-checkbox" checked>
+                <label for="tree-filter-shorts" class="toggle-label"></label>
+              </div>
+            </div>
+          </div>
+          <div id="tree-filter-status" class="tree-filter-status"></div>
 
           <input type="text" id="search-bar" class="search-bar" placeholder="Zoek op materiaal of oefening...">
 
@@ -461,10 +570,10 @@
   </div>
 
   <!-- Application Modules -->
-  <script src="audio.js?v=2.5.2"></script>
-  <script src="timer.js?v=2.5.2"></script>
-  <script src="slotmachine.js?v=2.5.2"></script>
-  <script src="app.js?v=2.5.2"></script>
+  <script src="audio.js?v=2.7.1"></script>
+  <script src="timer.js?v=2.7.1"></script>
+  <script src="slotmachine.js?v=2.7.1"></script>
+  <script src="app.js?v=2.7.1"></script>
 
 </body>
 </html>

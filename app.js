@@ -68,15 +68,59 @@ function _normalizeGitHubExercise(rawEx) {
     }
   }
 
-  // YouTube Video URL & Thumbnail
+  // Form cues & Coaching pointers
+  let formCues = [];
+  if (rawEx.form_cues && typeof rawEx.form_cues === "object") {
+    const cuesList = rawEx.form_cues.nl || rawEx.form_cues.en || [];
+    if (Array.isArray(cuesList)) {
+      formCues = cuesList;
+    } else if (typeof cuesList === "string") {
+      formCues = [cuesList];
+    }
+  }
+
+  // Target muscles
+  let targetMuscles = [];
+  if (rawEx.target_muscles && typeof rawEx.target_muscles === "object") {
+    if (Array.isArray(rawEx.target_muscles.primary)) {
+      targetMuscles.push(...rawEx.target_muscles.primary);
+    }
+    if (Array.isArray(rawEx.target_muscles.secondary)) {
+      targetMuscles.push(...rawEx.target_muscles.secondary);
+    }
+  }
+
+  // Attributes: difficulty & rating score
+  let difficulty = "intermediate";
+  let rating = 0;
+  if (rawEx.attributes && typeof rawEx.attributes === "object") {
+    if (rawEx.attributes.difficulty) {
+      difficulty = String(rawEx.attributes.difficulty).toLowerCase();
+    }
+    if (typeof rawEx.attributes.rating === "number") {
+      rating = rawEx.attributes.rating;
+    }
+  }
+
+  // YouTube Videos & Shorts detection
+  const videos = (rawEx.media && Array.isArray(rawEx.media.videos)) ? rawEx.media.videos : [];
+  const shortVideo = videos.find(v => (v.type === "short" || v.aspect_ratio === "9:16") && v.youtube_id);
+  const stdVideo = videos.find(v => (v.type === "standard" || v.aspect_ratio === "16:9") && v.youtube_id);
+  const anyVideo = videos.find(v => v.youtube_id) || videos[0];
+
+  const hasShortVideo = Boolean(
+    shortVideo ||
+    (rawEx.video_search_url && (rawEx.video_search_url.includes("/shorts/") || rawEx.is_short))
+  );
+
+  // Default video selection: prefer short video if available, otherwise standard/any
+  let chosenVideo = shortVideo || anyVideo;
   let videoUrl = "";
   let thumbUrl = "";
-  if (rawEx.media && Array.isArray(rawEx.media.videos) && rawEx.media.videos.length > 0) {
-    const bestVid = rawEx.media.videos.find(v => v.youtube_id) || rawEx.media.videos[0];
-    if (bestVid && bestVid.youtube_id) {
-      videoUrl = `https://www.youtube.com/watch?v=${bestVid.youtube_id}`;
-      thumbUrl = `https://img.youtube.com/vi/${bestVid.youtube_id}/hqdefault.jpg`;
-    }
+
+  if (chosenVideo && chosenVideo.youtube_id) {
+    videoUrl = `https://www.youtube.com/watch?v=${chosenVideo.youtube_id}`;
+    thumbUrl = `https://img.youtube.com/vi/${chosenVideo.youtube_id}/hqdefault.jpg`;
   }
   if (!videoUrl && rawEx.video_search_url) {
     videoUrl = rawEx.video_search_url;
@@ -84,6 +128,8 @@ function _normalizeGitHubExercise(rawEx) {
   if (!thumbUrl && rawEx.thumbnail) {
     thumbUrl = rawEx.thumbnail;
   }
+
+  const isShort = Boolean(chosenVideo ? (chosenVideo.type === "short" || chosenVideo.aspect_ratio === "9:16") : hasShortVideo);
 
   // ID with material prefix
   let id = rawEx.id || `ex_${Math.random().toString(36).substr(2, 9)}`;
@@ -99,8 +145,15 @@ function _normalizeGitHubExercise(rawEx) {
     material_name: matName,
     material_description: matDesc,
     instructions: instructions || "Voer de oefening gecontroleerd uit met de juiste techniek.",
+    form_cues: formCues,
+    target_muscles: targetMuscles,
     video_search_url: videoUrl,
-    thumbnail: thumbUrl
+    thumbnail: thumbUrl,
+    difficulty: difficulty,
+    rating: rating,
+    has_short_video: hasShortVideo,
+    is_short: isShort,
+    videos: videos
   };
 }
 
@@ -120,6 +173,10 @@ class WorkoutApp {
     this.coach = 'tabataman'; // 'tabataman', 'eva', 'arcade'
     this.noRepeatExercises = true; // Exhaust pool of exercises before repeating (default true)
     this.noRepeatMaterials = true; // Exhaust pool of materials before repeating (default true)
+    this.requireVideo = true;      // Require exercises to have video
+    this.requireShorts = true;     // Alleen Shorts video's (9:16) - standaard AAN
+    this.filterDifficulty = 'all'; // 'all', 'beginner', 'intermediate', 'advanced'
+    this.filterRating = 'all';     // 'all', '5', '4+', '3+', '2', '1'
     this.usedExerciseIds = new Set(); // Track used exercises in current cycle
     this.usedMaterials = new Set();   // Track used materials in current cycle
     this.usedHistory = [];            // Chronological array of used exercises in current cycle
@@ -275,6 +332,13 @@ class WorkoutApp {
       volumeInput: document.getElementById('volume-input'),
       coachSelect: document.getElementById('coach-select'),
       requireVideoInput: document.getElementById('require-video-input'),
+      requireShortsInput: document.getElementById('require-shorts-input'),
+      filterDifficultySelect: document.getElementById('filter-difficulty-select'),
+      filterRatingSelect: document.getElementById('filter-rating-select'),
+      treeFilterDifficulty: document.getElementById('tree-filter-difficulty'),
+      treeFilterRating: document.getElementById('tree-filter-rating'),
+      treeFilterShorts: document.getElementById('tree-filter-shorts'),
+      treeFilterStatus: document.getElementById('tree-filter-status'),
       noRepeatExercisesInput: document.getElementById('no-repeat-exercises-input'),
       noRepeatMaterialsInput: document.getElementById('no-repeat-materials-input'),
       usedHistoryList: document.getElementById('used-history-list'),
@@ -317,6 +381,19 @@ class WorkoutApp {
       // Active Workout HUD
       hudExerciseName: document.getElementById('hud-exercise-name'),
       hudMaterialInfo: document.getElementById('hud-material-info'),
+      videoAmbientGlow: document.getElementById('video-ambient-glow'),
+      hudStationBadge: document.getElementById('hud-station-badge'),
+      hudDifficultyBadge: document.getElementById('hud-difficulty-badge'),
+      hudRatingBadge: document.getElementById('hud-rating-badge'),
+      hudMusclesTags: document.getElementById('hud-muscles-tags'),
+      hudInstructionText: document.getElementById('hud-instruction-text'),
+      hudFormCuesBox: document.getElementById('hud-form-cues-box'),
+      hudFormCuesText: document.getElementById('hud-form-cues-text'),
+      shortsTimerNum: document.getElementById('shorts-timer-num'),
+      shortsTimerBarCircle: document.getElementById('shorts-timer-bar-circle'),
+      shortsNextUpCard: document.getElementById('shorts-next-up-card'),
+      shortsNextUpName: document.getElementById('shorts-next-up-name'),
+      shortsNextUpMat: document.getElementById('shorts-next-up-mat'),
       timerDigits: document.getElementById('timer-digits'),
       timerProgressFill: document.getElementById('timer-progress-fill'),
       timerProgressCircle: document.getElementById('timer-progress-circle'),
@@ -443,6 +520,62 @@ class WorkoutApp {
     
     // Admin Search
     this.elements.searchBar.addEventListener('input', (e) => this.filterAdminTree(e.target.value));
+
+    // Filter controls: Difficulty, Star Rating & Shorts Toggle
+    const handleDifficultyChange = (val) => {
+      this.filterDifficulty = val;
+      if (this.elements.filterDifficultySelect) this.elements.filterDifficultySelect.value = val;
+      if (this.elements.treeFilterDifficulty) this.elements.treeFilterDifficulty.value = val;
+      this._setCookie('workout_filter_difficulty', this.filterDifficulty);
+      this.buildAdminTree();
+      this.updateReelsPool();
+    };
+    if (this.elements.filterDifficultySelect) {
+      this.elements.filterDifficultySelect.addEventListener('change', (e) => handleDifficultyChange(e.target.value));
+    }
+    if (this.elements.treeFilterDifficulty) {
+      this.elements.treeFilterDifficulty.addEventListener('change', (e) => handleDifficultyChange(e.target.value));
+    }
+
+    const handleRatingChange = (val) => {
+      this.filterRating = val;
+      if (this.elements.filterRatingSelect) this.elements.filterRatingSelect.value = val;
+      if (this.elements.treeFilterRating) this.elements.treeFilterRating.value = val;
+      this._setCookie('workout_filter_rating', this.filterRating);
+      this.buildAdminTree();
+      this.updateReelsPool();
+    };
+    if (this.elements.filterRatingSelect) {
+      this.elements.filterRatingSelect.addEventListener('change', (e) => handleRatingChange(e.target.value));
+    }
+    if (this.elements.treeFilterRating) {
+      this.elements.treeFilterRating.addEventListener('change', (e) => handleRatingChange(e.target.value));
+    }
+
+    const handleShortsChange = (checked) => {
+      this.requireShorts = checked;
+      if (this.elements.requireShortsInput) this.elements.requireShortsInput.checked = checked;
+      if (this.elements.treeFilterShorts) this.elements.treeFilterShorts.checked = checked;
+      this._setCookie('workout_require_shorts', this.requireShorts);
+      this._updateShortsClass();
+      this.buildAdminTree();
+      this.updateReelsPool();
+    };
+    if (this.elements.requireShortsInput) {
+      this.elements.requireShortsInput.addEventListener('change', (e) => handleShortsChange(e.target.checked));
+    }
+    if (this.elements.treeFilterShorts) {
+      this.elements.treeFilterShorts.addEventListener('change', (e) => handleShortsChange(e.target.checked));
+    }
+
+    if (this.elements.requireVideoInput) {
+      this.elements.requireVideoInput.addEventListener('change', (e) => {
+        this.requireVideo = e.target.checked;
+        this._setCookie('workout_require_video', this.requireVideo);
+        this.buildAdminTree();
+        this.updateReelsPool();
+      });
+    }
     
     // Select All / Deselect All
     this.elements.selectAllBtn.addEventListener('click', () => this.toggleAllExercises(true));
@@ -588,6 +721,22 @@ class WorkoutApp {
    */
   async _loadLocalDatabaseFiles() {
     this.database = {};
+    // 1. Try single master all_exercises.json snapshot first
+    try {
+      const response = await fetch('./workoutdatabase/all_exercises.json');
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data) && data.length > 0) {
+          this._populateDatabaseFromRawArray(data);
+          console.log(`Geladen uit lokale workoutdatabase/all_exercises.json: ${data.length} oefeningen`);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Kon all_exercises.json lokaal niet direct laden, val terug op afzonderlijke bestanden:", err);
+    }
+
+    // 2. Fallback to individual per-material files
     const fetchPromises = DATABASE_FILES.map(async (filename) => {
       try {
         const response = await fetch(`./workoutdatabase/${filename}`);
@@ -824,6 +973,9 @@ class WorkoutApp {
     this.autoPlay = true; // Auto-play is always on
     this.coach = this._getCookie('workout_coach') || 'tabataman';
     this.requireVideo = this._getCookie('workout_require_video') !== 'false';
+    this.requireShorts = this._getCookie('workout_require_shorts') !== 'false';
+    this.filterDifficulty = this._getCookie('workout_filter_difficulty') || 'all';
+    this.filterRating = this._getCookie('workout_filter_rating') || 'all';
     this.noRepeatExercises = this._getCookie('workout_no_repeat_exercises') !== 'false';
     this.noRepeatMaterials = this._getCookie('workout_no_repeat_materials') !== 'false';
     this.teamCount = parseInt(this._getCookie('workout_team_count')) || 1;
@@ -877,6 +1029,26 @@ class WorkoutApp {
       this.elements.coachSelect.value = this.coach;
     }
     this.elements.requireVideoInput.checked = this.requireVideo;
+    if (this.elements.requireShortsInput) {
+      this.elements.requireShortsInput.checked = this.requireShorts;
+    }
+    if (this.elements.treeFilterShorts) {
+      this.elements.treeFilterShorts.checked = this.requireShorts;
+    }
+    if (this.elements.filterDifficultySelect) {
+      this.elements.filterDifficultySelect.value = this.filterDifficulty;
+    }
+    if (this.elements.treeFilterDifficulty) {
+      this.elements.treeFilterDifficulty.value = this.filterDifficulty;
+    }
+    if (this.elements.filterRatingSelect) {
+      this.elements.filterRatingSelect.value = this.filterRating;
+    }
+    if (this.elements.treeFilterRating) {
+      this.elements.treeFilterRating.value = this.filterRating;
+    }
+    this._updateShortsClass();
+
     if (this.elements.noRepeatExercisesInput) {
       this.elements.noRepeatExercisesInput.checked = this.noRepeatExercises;
     }
@@ -976,7 +1148,10 @@ class WorkoutApp {
     let classEnd = this.elements.classEndInput.value || '';
     let vol = parseInt(this.elements.volumeInput.value) || 200;
     let coach = this.elements.coachSelect ? this.elements.coachSelect.value : 'tabataman';
-    let requireVideo = this.elements.requireVideoInput.checked;
+    let requireVideo = this.elements.requireVideoInput ? this.elements.requireVideoInput.checked : this.requireVideo;
+    let requireShorts = this.elements.requireShortsInput ? this.elements.requireShortsInput.checked : this.requireShorts;
+    let filterDifficulty = this.elements.filterDifficultySelect ? this.elements.filterDifficultySelect.value : this.filterDifficulty;
+    let filterRating = this.elements.filterRatingSelect ? this.elements.filterRatingSelect.value : this.filterRating;
     let noRepeatExercises = this.elements.noRepeatExercisesInput ? this.elements.noRepeatExercisesInput.checked : true;
     let noRepeatMaterials = this.elements.noRepeatMaterialsInput ? this.elements.noRepeatMaterialsInput.checked : true;
     let teamCount = parseInt(this.elements.teamCountInput ? this.elements.teamCountInput.value : '1') || 1;
@@ -997,6 +1172,9 @@ class WorkoutApp {
     this.volume = vol / 100;
     this.coach = coach;
     this.requireVideo = requireVideo;
+    this.requireShorts = requireShorts;
+    this.filterDifficulty = filterDifficulty;
+    this.filterRating = filterRating;
     this.noRepeatExercises = noRepeatExercises;
     this.noRepeatMaterials = noRepeatMaterials;
     this.circuitRotation = circuitRotation;
@@ -1018,6 +1196,9 @@ class WorkoutApp {
     this.classStartTime = classStart;
     this.classEndTime = classEnd;
     this.requireVideo = requireVideo;
+    this.requireShorts = requireShorts;
+    this.filterDifficulty = filterDifficulty;
+    this.filterRating = filterRating;
     this.noRepeatExercises = noRepeatExercises;
     this.noRepeatMaterials = noRepeatMaterials;
     this.circuitRotation = circuitRotation;
@@ -1028,9 +1209,13 @@ class WorkoutApp {
     this._setCookie('workout_class_start', this.classStartTime);
     this._setCookie('workout_class_end', this.classEndTime);
     this._setCookie('workout_require_video', this.requireVideo);
+    this._setCookie('workout_require_shorts', this.requireShorts);
+    this._setCookie('workout_filter_difficulty', this.filterDifficulty);
+    this._setCookie('workout_filter_rating', this.filterRating);
     this._setCookie('workout_no_repeat_exercises', this.noRepeatExercises);
     this._setCookie('workout_no_repeat_materials', this.noRepeatMaterials);
     this._setCookie('workout_circuit_rotation', this.circuitRotation);
+    this._updateShortsClass();
 
     let gUrl = this.elements.googleSheetsUrlInput ? this.elements.googleSheetsUrlInput.value.trim() : this.googleSheetsUrl;
     this.googleSheetsUrl = gUrl;
@@ -1190,6 +1375,60 @@ class WorkoutApp {
     this.renderUsedHistory();
   }
 
+  _updateShortsClass() {
+    const isShorts = Boolean(this.requireShorts);
+    document.body.classList.toggle('mode-shorts', isShorts);
+    if (this.elements && this.elements.appMain) {
+      this.elements.appMain.classList.toggle('mode-shorts', isShorts);
+    }
+  }
+
+  _isExerciseEligible(ex, options = {}) {
+    if (!ex) return false;
+
+    // 1. Disabled exercise check
+    if (!options.ignoreDisabled) {
+      const disabledSet = options.useTempDisabled ? this.tempDisabledExerciseIds : this.disabledExerciseIds;
+      if (disabledSet && disabledSet.has(ex.id)) {
+        return false;
+      }
+    }
+
+    // 2. Require Video check
+    if (this.requireVideo && !this._hasValidWorkingVideo(ex)) {
+      return false;
+    }
+
+    // 3. Require Shorts Video check (default true / AAN)
+    if (this.requireShorts && !ex.has_short_video) {
+      return false;
+    }
+
+    // 4. Difficulty filter check
+    const diff = options.filterDifficulty || this.filterDifficulty;
+    if (diff && diff !== 'all') {
+      const exDiff = (ex.difficulty || '').toLowerCase();
+      if (exDiff !== diff.toLowerCase()) {
+        return false;
+      }
+    }
+
+    // 5. Star rating filter check
+    const ratingFilter = options.filterRating || this.filterRating;
+    if (ratingFilter && ratingFilter !== 'all') {
+      const exRating = Number(ex.rating) || 0;
+      if (ratingFilter.endsWith('+')) {
+        const minRating = parseInt(ratingFilter, 10);
+        if (exRating < minRating) return false;
+      } else {
+        const targetRating = parseInt(ratingFilter, 10);
+        if (exRating !== targetRating) return false;
+      }
+    }
+
+    return true;
+  }
+
   renderUsedHistory() {
     if (!this.elements.usedHistoryList || !this.elements.usedHistoryStats) return;
 
@@ -1197,11 +1436,7 @@ class WorkoutApp {
     let totalExercises = 0;
     let totalMaterials = 0;
     for (const mat in this.database) {
-      const exs = this.database[mat].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !(ex.video_search_url || '').trim()) return false;
-        return true;
-      });
+      const exs = this.database[mat].filter(ex => this._isExerciseEligible(ex));
       if (exs.length > 0) {
         totalMaterials++;
         totalExercises += exs.length;
@@ -2143,18 +2378,14 @@ class WorkoutApp {
       const activeExercisesMap = {};
       const allEnabled = [];
 
-    for (const mat in this.database) {
-      const exs = this.database[mat].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
-        return true;
-      });
-      if (exs.length > 0) {
-        activeMaterials.push(mat);
-        activeExercisesMap[mat] = exs;
-        allEnabled.push(...exs);
+      for (const mat in this.database) {
+        const exs = this.database[mat].filter(ex => this._isExerciseEligible(ex));
+        if (exs.length > 0) {
+          activeMaterials.push(mat);
+          activeExercisesMap[mat] = exs;
+          allEnabled.push(...exs);
+        }
       }
-    }
 
     if (activeMaterials.length === 0 || allEnabled.length === 0) {
       this.plannedSchedule = [];
@@ -2726,11 +2957,7 @@ class WorkoutApp {
     const activeMaterials = [];
     const activeExercisesMap = {};
     for (const mat in this.database) {
-      const exs = this.database[mat].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
-        return true;
-      });
+      const exs = this.database[mat].filter(ex => this._isExerciseEligible(ex));
       if (exs.length > 0) {
         activeMaterials.push(mat);
         activeExercisesMap[mat] = exs;
@@ -3071,11 +3298,7 @@ class WorkoutApp {
     const activeMaterials = [];
     const activeExercisesMap = {};
     for (const mat in this.database) {
-      const exs = this.database[mat].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
-        return true;
-      });
+      const exs = this.database[mat].filter(ex => this._isExerciseEligible(ex));
       if (exs.length > 0) {
         activeMaterials.push(mat);
         activeExercisesMap[mat] = exs;
@@ -3144,13 +3367,19 @@ class WorkoutApp {
 
     // Sort materials alphabetically
     const sortedMaterials = Object.keys(this.database).sort();
+    let visibleMaterialsCount = 0;
+    let visibleExercisesCount = 0;
 
     sortedMaterials.forEach((materialName) => {
-      let exercises = this.database[materialName];
-      if (this.requireVideo) {
-        exercises = exercises.filter(ex => (ex.video_search_url || '').trim() !== '');
-      }
+      const rawExercises = this.database[materialName] || [];
+      // Apply active filters (difficulty, star rating, shorts, video)
+      const exercises = rawExercises.filter(ex => this._isExerciseEligible(ex, { ignoreDisabled: true }));
+      
+      // CRITICAL: If 0 exercises match the active filters, do not display this material!
       if (exercises.length === 0) return;
+
+      visibleMaterialsCount++;
+      visibleExercisesCount += exercises.length;
       
       const node = document.createElement('div');
       node.className = 'material-node';
@@ -3188,9 +3417,18 @@ class WorkoutApp {
         const isChecked = !this.tempDisabledExerciseIds.has(exercise.id);
         const checkClass = isChecked ? 'checkbox-custom checked' : 'checkbox-custom';
 
+        const starText = exercise.rating ? '⭐'.repeat(exercise.rating) : '';
+        const diffBadge = exercise.difficulty ? `<span class="badge-diff badge-${exercise.difficulty}">${exercise.difficulty.slice(0,3).toUpperCase()}</span>` : '';
+        const shortsBadge = exercise.has_short_video ? '<span class="badge-short" title="9:16 Short video">📱 9:16</span>' : '';
+
         exRow.innerHTML = `
           <span class="${checkClass}" data-type="exercise" data-id="${exercise.id}"></span>
           <span class="exercise-label">${exercise.exercise_name}</span>
+          <div class="exercise-meta-chips">
+            ${diffBadge}
+            ${starText ? `<span class="badge-stars">${starText}</span>` : ''}
+            ${shortsBadge}
+          </div>
         `;
         
         // Exercise click listener
@@ -3230,7 +3468,6 @@ class WorkoutApp {
         const checkState = matCheckbox.classList.contains('checked');
         const indeterminateState = matCheckbox.classList.contains('indeterminate');
         
-        // If checked or indeterminate, clicking unchecks everything. Otherwise checks everything.
         const shouldCheck = !(checkState || indeterminateState);
         
         exercises.forEach(ex => {
@@ -3257,6 +3494,14 @@ class WorkoutApp {
       node.appendChild(branch);
       treeContainer.appendChild(node);
     });
+
+    // Update filter status counter above the tree
+    if (this.elements.treeFilterStatus) {
+      this.elements.treeFilterStatus.innerHTML = `
+        <span class="filter-stat-badge">📦 ${visibleMaterialsCount} / ${sortedMaterials.length} materialen</span>
+        <span class="filter-stat-badge">🏋️ ${visibleExercisesCount} oefeningen</span>
+      `;
+    }
   }
 
   /**
@@ -3266,10 +3511,8 @@ class WorkoutApp {
     const node = this.elements.databaseTree.querySelector(`.material-node[data-material="${CSS.escape(materialName)}"]`);
     if (!node) return;
 
-    let exercises = this.database[materialName];
-    if (this.requireVideo) {
-      exercises = exercises.filter(ex => (ex.video_search_url || '').trim() !== '');
-    }
+    const rawExercises = this.database[materialName] || [];
+    const exercises = rawExercises.filter(ex => this._isExerciseEligible(ex, { ignoreDisabled: true }));
     const exercisesIds = exercises.map(ex => ex.id);
     const disabledCount = exercisesIds.filter(id => this.tempDisabledExerciseIds.has(id)).length;
     
@@ -3331,10 +3574,8 @@ class WorkoutApp {
    */
   toggleAllExercises(shouldEnable) {
     for (const materialName in this.database) {
-      let exercises = this.database[materialName];
-      if (this.requireVideo) {
-        exercises = exercises.filter(ex => (ex.video_search_url || '').trim() !== '');
-      }
+      const rawExercises = this.database[materialName] || [];
+      const exercises = rawExercises.filter(ex => this._isExerciseEligible(ex, { ignoreDisabled: true }));
       exercises.forEach(ex => {
         if (shouldEnable) {
           this.tempDisabledExerciseIds.delete(ex.id);
@@ -3357,11 +3598,7 @@ class WorkoutApp {
     const activeExercises = [];
 
     for (const materialName in this.database) {
-      const enabledExs = this.database[materialName].filter(ex => {
-        if (this.disabledExerciseIds.has(ex.id)) return false;
-        if (this.requireVideo && !this._hasValidWorkingVideo(ex)) return false;
-        return true;
-      });
+      const enabledExs = this.database[materialName].filter(ex => this._isExerciseEligible(ex));
       if (enabledExs.length > 0) {
         activeMaterials.push(materialName);
         activeExercises.push(...enabledExs);
@@ -3865,13 +4102,22 @@ class WorkoutApp {
       // Calculate current station index for this team given circuit rotation or fixed stations
       const stationIdx = this.circuitRotation ? ((teamIdx + this.currentRotationIndex) % T) : teamIdx;
       const station = this.activeStations[stationIdx] || this.activeStations[0];
-      const ex = station.exercise;
-      const mat = station.material;
+      const ex = station.exercise || {};
+      const mat = station.material || ex.material_name || '';
 
       const rawUrl = (ex.video_search_url || '').trim();
       const videoId = this._extractYouTubeId(rawUrl);
       const isBroken = this.brokenVideoExerciseIds.has(ex.id);
       const thumb = (ex.thumbnail || '').trim() || (videoId ? `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` : '');
+
+      const diffLabels = { beginner: '🟢 BEGINNER', intermediate: '🟡 GEMIDDELD', advanced: '🔴 GEVORDERD' };
+      const diffHtml = ex.difficulty ? `<span class="team-video-diff diff-${ex.difficulty}">${diffLabels[ex.difficulty] || ex.difficulty.toUpperCase()}</span>` : '';
+      const starsHtml = ex.rating > 0 ? `<span class="team-video-stars">${'⭐'.repeat(ex.rating)}</span>` : '';
+      const musclesHtml = Array.isArray(ex.target_muscles) && ex.target_muscles.length > 0
+        ? ex.target_muscles.slice(0, 3).map(m => `<span class="team-muscle-tag">${m.replace(/_/g, ' ')}</span>`).join('')
+        : (mat ? `<span class="team-muscle-tag">${mat}</span>` : '');
+      const cueText = Array.isArray(ex.form_cues) && ex.form_cues.length > 0 ? ex.form_cues[0] : '';
+      const cueHtml = cueText ? `<div class="team-video-cue" title="${cueText}">💡 ${cueText}</div>` : '';
 
       const card = document.createElement('div');
       card.className = `team-video-card team-card-${teamNum}`;
@@ -3903,23 +4149,33 @@ class WorkoutApp {
         `;
       } else {
         playerMarkup = `
-          <img class="team-video-fallback" src="${thumb || ''}" alt="${ex.exercise_name}" style="${thumb ? 'display:block;' : 'display:none;'}">
+          <img class="team-video-fallback" src="${thumb || ''}" alt="${ex.exercise_name || ''}" style="${thumb ? 'display:block;' : 'display:none;'}">
         `;
       }
 
       card.innerHTML = `
         <div class="team-video-header">
-          <span class="team-video-badge team-badge-${teamNum}">
-            <span class="team-dot"></span> TEAM ${teamNum}
-          </span>
-          <div class="team-video-info">
-            <span class="team-video-ex-title" title="${ex.exercise_name}">${ex.exercise_name}</span>
-            <span class="team-video-mat-title">📦 ${mat}</span>
+          <div class="team-video-header-top">
+            <span class="team-video-badge team-badge-${teamNum}">
+              <span class="team-dot"></span> TEAM ${teamNum}
+            </span>
+            <span class="team-video-station-num">STATION ${stationIdx + 1}</span>
           </div>
-          <span class="team-video-station-num">STATION ${stationIdx + 1}</span>
+          <div class="team-video-info">
+            <span class="team-video-ex-title" title="${ex.exercise_name || ''}">${ex.exercise_name || '---'}</span>
+            <div class="team-video-sub-row">
+              <span class="team-video-mat-title">📦 ${mat}</span>
+              ${diffHtml}
+              ${starsHtml}
+            </div>
+          </div>
         </div>
         <div class="team-video-player-wrap">
           ${playerMarkup}
+        </div>
+        <div class="team-video-footer">
+          ${musclesHtml ? `<div class="team-video-muscles">${musclesHtml}</div>` : ''}
+          ${cueHtml}
         </div>
       `;
 
@@ -3933,6 +4189,19 @@ class WorkoutApp {
       if (this.elements.multiVideoGrid) {
         this.elements.multiVideoGrid.style.display = 'grid';
         this._renderMultiVideoGrid();
+      }
+      // Ambient backdrop glow for multi-team mode
+      if (this.elements.videoAmbientGlow) {
+        const firstStation = this.activeStations && this.activeStations[0];
+        if (firstStation && firstStation.exercise) {
+          const rawUrl = (firstStation.exercise.video_search_url || '').trim();
+          const vidId = this._extractYouTubeId(rawUrl);
+          const thumb = (firstStation.exercise.thumbnail || '').trim() || (vidId ? `https://img.youtube.com/vi/${vidId}/hqdefault.jpg` : '');
+          if (thumb) {
+            this.elements.videoAmbientGlow.style.backgroundImage = `url('${thumb}')`;
+            this.elements.videoAmbientGlow.style.opacity = '0.5';
+          }
+        }
       }
       return;
     }
@@ -3994,6 +4263,97 @@ class WorkoutApp {
       }
       if (slot) slot.classList.add('use-fallback');
     }
+
+    // Populate Shorts HUD Panels & Backdrop
+    const ex = this.activeExercise;
+    const mat = this.activeMaterial || (ex ? ex.material_name : '');
+
+    if (this.elements.hudExerciseName) this.elements.hudExerciseName.textContent = ex ? ex.exercise_name : '---';
+    const mobileEx = document.getElementById('hud-exercise-name-mobile');
+    if (mobileEx) mobileEx.textContent = ex ? ex.exercise_name : '---';
+    if (this.elements.hudMaterialInfo) this.elements.hudMaterialInfo.textContent = mat ? `📦 ${mat}` : '---';
+    const mobileMat = document.getElementById('hud-material-info-mobile');
+    if (mobileMat) mobileMat.textContent = mat ? `📦 ${mat}` : '---';
+
+    // Difficulty badge
+    if (this.elements.hudDifficultyBadge) {
+      if (ex && ex.difficulty) {
+        const diffLabels = { beginner: '🟢 BEGINNER', intermediate: '🟡 GEMIDDELD', advanced: '🔴 GEVORDERD' };
+        this.elements.hudDifficultyBadge.textContent = diffLabels[ex.difficulty] || ex.difficulty.toUpperCase();
+        this.elements.hudDifficultyBadge.className = `hud-difficulty-badge diff-${ex.difficulty}`;
+        this.elements.hudDifficultyBadge.style.display = 'inline-block';
+      } else {
+        this.elements.hudDifficultyBadge.style.display = 'none';
+      }
+    }
+
+    // Rating badge
+    if (this.elements.hudRatingBadge) {
+      if (ex && ex.rating > 0) {
+        this.elements.hudRatingBadge.textContent = '⭐'.repeat(ex.rating);
+        this.elements.hudRatingBadge.title = `${ex.rating} van 5 sterren`;
+        this.elements.hudRatingBadge.style.display = 'inline-block';
+      } else {
+        this.elements.hudRatingBadge.style.display = 'none';
+      }
+    }
+
+    // Target muscles
+    if (this.elements.hudMusclesTags) {
+      if (ex && Array.isArray(ex.target_muscles) && ex.target_muscles.length > 0) {
+        this.elements.hudMusclesTags.innerHTML = ex.target_muscles.slice(0, 4).map(m => `
+          <span class="muscle-tag">${m.replace(/_/g, ' ')}</span>
+        `).join('');
+      } else if (ex && ex.category) {
+        this.elements.hudMusclesTags.innerHTML = `<span class="muscle-tag">${ex.category}</span>`;
+      } else {
+        this.elements.hudMusclesTags.innerHTML = `<span class="muscle-tag">${mat || 'Workout'}</span>`;
+      }
+    }
+
+    // Instructions
+    if (this.elements.hudInstructionText) {
+      this.elements.hudInstructionText.textContent = (ex && ex.instructions) ? ex.instructions : 'Voer de oefening gecontroleerd uit met de juiste techniek.';
+    }
+
+    // Form cues
+    if (this.elements.hudFormCuesBox && this.elements.hudFormCuesText) {
+      if (ex && Array.isArray(ex.form_cues) && ex.form_cues.length > 0) {
+        this.elements.hudFormCuesText.textContent = ex.form_cues[0];
+        this.elements.hudFormCuesBox.style.display = 'block';
+      } else {
+        this.elements.hudFormCuesBox.style.display = 'none';
+      }
+    }
+
+    // Ambient glow backdrop
+    if (this.elements.videoAmbientGlow) {
+      if (thumb) {
+        this.elements.videoAmbientGlow.style.backgroundImage = `url('${thumb}')`;
+        this.elements.videoAmbientGlow.style.opacity = '0.7';
+      } else {
+        this.elements.videoAmbientGlow.style.backgroundImage = 'none';
+        this.elements.videoAmbientGlow.style.opacity = '0';
+      }
+    }
+
+    // Next up card
+    this._updateShortsNextUp();
+  }
+
+  _updateShortsNextUp() {
+    if (!this.elements.shortsNextUpName) return;
+    const nextIdx = this.currentScheduleIndex;
+    const nextItem = this.plannedSchedule[nextIdx];
+    if (nextItem && nextItem.exercise) {
+      this.elements.shortsNextUpName.textContent = nextItem.exercise.exercise_name || 'Volgende oefening';
+      if (this.elements.shortsNextUpMat) {
+        this.elements.shortsNextUpMat.textContent = `📦 ${nextItem.material || nextItem.exercise.material_name || ''}`;
+      }
+    } else {
+      this.elements.shortsNextUpName.textContent = 'Laatste ronde!';
+      if (this.elements.shortsNextUpMat) this.elements.shortsNextUpMat.textContent = '🏁 Bijna klaar!';
+    }
   }
 
   _stopYouTubeIframe() {
@@ -4003,6 +4363,9 @@ class WorkoutApp {
     if (this.elements.multiVideoGrid) {
       const iframes = this.elements.multiVideoGrid.querySelectorAll('iframe');
       iframes.forEach(f => { f.src = ''; });
+    }
+    if (this.elements.videoAmbientGlow) {
+      this.elements.videoAmbientGlow.style.opacity = '0';
     }
   }
 
@@ -4018,6 +4381,15 @@ class WorkoutApp {
         this.elements.timerDigits.classList.remove('low-time');
       }
     }
+
+    if (this.elements.shortsTimerNum) {
+      this.elements.shortsTimerNum.textContent = secondsRemaining;
+      if (secondsRemaining <= 5) {
+        this.elements.shortsTimerNum.classList.add('low-time');
+      } else {
+        this.elements.shortsTimerNum.classList.remove('low-time');
+      }
+    }
     
     // Calculate progress (0.0 to 1.0)
     const progress = this.timer ? this.timer.getProgress() : 0;
@@ -4030,6 +4402,18 @@ class WorkoutApp {
         this.elements.timerProgressFill.classList.add('low-time');
       } else {
         this.elements.timerProgressFill.classList.remove('low-time');
+      }
+    }
+
+    // Shorts circular timer ring
+    if (this.elements.shortsTimerBarCircle) {
+      const circ = 276.46; // 2 * PI * 44
+      const offset = circ * progress;
+      this.elements.shortsTimerBarCircle.style.strokeDashoffset = offset;
+      if (secondsRemaining <= 5) {
+        this.elements.shortsTimerBarCircle.classList.add('low-time');
+      } else {
+        this.elements.shortsTimerBarCircle.classList.remove('low-time');
       }
     }
 
