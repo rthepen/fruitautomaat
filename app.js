@@ -4092,7 +4092,7 @@ class WorkoutApp {
     const grid = this.elements.multiVideoGrid;
     const T = this.teamCount;
 
-    grid.className = `multi-video-grid grid-teams-${T}`;
+    grid.className = `multi-video-grid grid-teams-${T}${T >= 7 ? ' is-multi-row' : ''}`;
     grid.innerHTML = '';
 
     if (!this.activeStations || this.activeStations.length === 0) return;

@@ -4365,6 +4365,8 @@ header {
     grid-column: 1;
     height: 100%;
     aspect-ratio: 9 / 16;
+    margin: 0;
+    border-radius: 14px 0 0 14px;
   }
   .mode-shorts .multi-video-grid.grid-teams-2 .team-video-header {
     grid-column: 2;
@@ -4397,7 +4399,7 @@ header {
   margin: 0 auto;
 }
 
-/* 5 TEAMS: 5 cards across on wide, or 2 rows */
+/* 5 TEAMS: 5 cards across on wide screens */
 .mode-shorts .multi-video-grid.grid-teams-5 {
   grid-template-columns: repeat(5, minmax(180px, 1fr));
   grid-template-rows: 1fr;
@@ -4406,7 +4408,7 @@ header {
   margin: 0 auto;
 }
 
-/* 6 TEAMS: 6 cards across on ultra-wide, or 2 rows of 3 */
+/* 6 TEAMS: 6 cards across on ultra-wide screens */
 .mode-shorts .multi-video-grid.grid-teams-6 {
   grid-template-columns: repeat(6, minmax(170px, 1fr));
   grid-template-rows: 1fr;
@@ -4415,25 +4417,225 @@ header {
   margin: 0 auto;
 }
 
-/* 7 & 8 TEAMS: 2 rows of 4 cards */
+/* 7 & 8 TEAMS: 2 rows of 4 cards (Side-by-side card layout so vertical videos stretch full card height) */
 .mode-shorts .multi-video-grid.grid-teams-7,
-.mode-shorts .multi-video-grid.grid-teams-8 {
+.mode-shorts .multi-video-grid.grid-teams-8,
+.mode-shorts .multi-video-grid.is-multi-row {
   grid-template-columns: repeat(4, minmax(180px, 1fr));
   grid-template-rows: repeat(2, 1fr);
   max-width: 100%;
   width: 100%;
   margin: 0 auto;
+  gap: 0.55rem;
+  padding: 0.25rem 0.6rem 0.5rem;
+}
+
+/* Split Side-by-Side card for 7 & 8 teams (and general multi-row) */
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-card,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-card,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto 1fr;
+  align-items: stretch;
+  height: 100%;
+  max-height: 100%;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-player-wrap,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-player-wrap,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-player-wrap {
+  grid-row: 1 / -1;
+  grid-column: 1;
+  height: 100%;
+  max-height: 100%;
+  width: auto;
+  aspect-ratio: 9 / 16;
+  margin: 0;
+  border-radius: 14px 0 0 14px;
+  background: #000;
+  overflow: hidden;
+  position: relative;
+  flex: none;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-header,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-header,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-header {
+  grid-column: 2;
+  grid-row: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.35rem 0.6rem;
+  background: rgba(20, 20, 32, 0.95);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-header-top,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-header-top,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-ex-title,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-ex-title,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-ex-title {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #fff;
+  white-space: normal;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-sub-row,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-sub-row,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-mat-title,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-mat-title,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-mat-title {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-footer,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-footer,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-footer {
+  grid-column: 2;
+  grid-row: 2;
+  border-top: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.35rem 0.6rem;
+  background: rgba(14, 14, 22, 0.95);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.3rem;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-muscles,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-muscles,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-muscles {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-muscle-tag,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-muscle-tag,
+.mode-shorts .multi-video-grid.is-multi-row .team-muscle-tag {
+  font-size: 0.62rem;
+  padding: 1px 4px;
+}
+
+.mode-shorts .multi-video-grid.grid-teams-7 .team-video-cue,
+.mode-shorts .multi-video-grid.grid-teams-8 .team-video-cue,
+.mode-shorts .multi-video-grid.is-multi-row .team-video-cue {
+  font-size: 0.68rem;
+  white-space: normal;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding: 2px 5px;
 }
 
 /* Responsive Breakpoints for Shorts Mode */
 @media (max-width: 1600px) {
-  .mode-shorts .multi-video-grid.grid-teams-5 {
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-rows: repeat(2, 1fr);
-  }
+  .mode-shorts .multi-video-grid.grid-teams-5,
   .mode-shorts .multi-video-grid.grid-teams-6 {
     grid-template-columns: repeat(3, 1fr);
     grid-template-rows: repeat(2, 1fr);
+    gap: 0.55rem;
+    padding: 0.25rem 0.6rem 0.5rem;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-card,
+  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto 1fr;
+    align-items: stretch;
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-player-wrap,
+  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-player-wrap {
+    grid-row: 1 / -1;
+    grid-column: 1;
+    height: 100%;
+    max-height: 100%;
+    width: auto;
+    aspect-ratio: 9 / 16;
+    margin: 0;
+    border-radius: 14px 0 0 14px;
+    background: #000;
+    overflow: hidden;
+    position: relative;
+    flex: none;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-header,
+  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-header {
+    grid-column: 2;
+    grid-row: 1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.35rem 0.6rem;
+    min-width: 0;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-footer,
+  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-footer {
+    grid-column: 2;
+    grid-row: 2;
+    border-top: none;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.35rem 0.6rem;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-ex-title,
+  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-ex-title {
+    white-space: normal;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-5 .team-video-cue,
+  .mode-shorts .multi-video-grid.grid-teams-6 .team-video-cue {
+    white-space: normal;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }
 
@@ -4442,6 +4644,75 @@ header {
   .mode-shorts .multi-video-grid.grid-teams-4 {
     grid-template-columns: repeat(2, 1fr);
     grid-template-rows: repeat(2, 1fr);
+    gap: 0.55rem;
+    padding: 0.25rem 0.6rem 0.5rem;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-card,
+  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-card {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto 1fr;
+    align-items: stretch;
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-player-wrap,
+  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-player-wrap {
+    grid-row: 1 / -1;
+    grid-column: 1;
+    height: 100%;
+    max-height: 100%;
+    width: auto;
+    aspect-ratio: 9 / 16;
+    margin: 0;
+    border-radius: 14px 0 0 14px;
+    background: #000;
+    overflow: hidden;
+    position: relative;
+    flex: none;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-header,
+  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-header {
+    grid-column: 2;
+    grid-row: 1;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.35rem 0.6rem;
+    min-width: 0;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-footer,
+  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-footer {
+    grid-column: 2;
+    grid-row: 2;
+    border-top: none;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.35rem 0.6rem;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-ex-title,
+  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-ex-title {
+    white-space: normal;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .mode-shorts .multi-video-grid.grid-teams-3 .team-video-cue,
+  .mode-shorts .multi-video-grid.grid-teams-4 .team-video-cue {
+    white-space: normal;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }
 
@@ -4468,5 +4739,6 @@ header {
     border-radius: 12px;
   }
 }
+
 
 
